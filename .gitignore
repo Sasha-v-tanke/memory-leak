@@ -1,0 +1,11 @@
+.gradle
+/build
+/.idea
+*.iml
+/src/main/resources/application.conf
+
+# Project exclude paths
+/core/build/
+/lwjgl3/build/
+/server/build/
+/shared/build/
