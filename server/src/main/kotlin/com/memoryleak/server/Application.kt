@@ -1,5 +1,6 @@
 package com.memoryleak.server
 
+import com.memoryleak.server.database.DatabaseConfig
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
@@ -8,6 +9,9 @@ import io.ktor.server.websocket.*
 import java.time.Duration
 
 fun main() {
+    // Initialize database (if enabled via environment variables)
+    DatabaseConfig.init()
+    
     embeddedServer(Netty, port = 8080, host = "0.0.0.0", module = Application::module)
         .start(wait = true)
 }
