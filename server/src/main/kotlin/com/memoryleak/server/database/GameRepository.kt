@@ -1,8 +1,6 @@
 package com.memoryleak.server.database
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -14,11 +12,6 @@ import java.util.UUID
  * Handles persistence of game sessions and match results.
  */
 object GameRepository {
-    
-    private val json = Json { 
-        ignoreUnknownKeys = true
-        prettyPrint = false
-    }
     
     /**
      * Create a new game session.
@@ -157,7 +150,7 @@ object GameRepository {
         return try {
             transaction {
                 val existing = PlayerStatsTable
-                    .selectAll().where { PlayerStatsTable.playerId eq playerId }
+                    .select { PlayerStatsTable.playerId eq playerId }
                     .singleOrNull()
                 
                 if (existing != null) {
@@ -195,19 +188,19 @@ object GameRepository {
             transaction {
                 PlayerStatsTable.update({ PlayerStatsTable.playerId eq playerId }) {
                     with(SqlExpressionBuilder) {
-                        it[totalGames] = totalGames + 1
+                        it.update(totalGames, totalGames + 1)
                         if (won) {
-                            it[wins] = wins + 1
+                            it.update(wins, wins + 1)
                         } else {
-                            it[losses] = losses + 1
+                            it.update(losses, losses + 1)
                         }
-                        it[totalUnitsCreated] = totalUnitsCreated + unitsCreated
-                        it[totalUnitsKilled] = totalUnitsKilled + unitsKilled
-                        it[totalFactoriesBuilt] = totalFactoriesBuilt + factoriesBuilt
-                        it[totalCardsPlayed] = totalCardsPlayed + cardsPlayed
-                        it[totalPlayTimeSeconds] = totalPlayTimeSeconds + playTimeSeconds
-                        it[lastPlayedAt] = Instant.now()
+                        it.update(totalUnitsCreated, totalUnitsCreated + unitsCreated)
+                        it.update(totalUnitsKilled, totalUnitsKilled + unitsKilled)
+                        it.update(totalFactoriesBuilt, totalFactoriesBuilt + factoriesBuilt)
+                        it.update(totalCardsPlayed, totalCardsPlayed + cardsPlayed)
+                        it.update(totalPlayTimeSeconds, totalPlayTimeSeconds + playTimeSeconds)
                     }
+                    it[lastPlayedAt] = Instant.now()
                 }
             }
         } catch (e: Exception) {
@@ -224,15 +217,15 @@ object GameRepository {
         try {
             transaction {
                 val session = GameSessionsTable
-                    .selectAll().where { GameSessionsTable.id eq sessionId }
+                    .select { GameSessionsTable.id eq sessionId }
                     .singleOrNull() ?: return@transaction
                 
                 // Determine winner (the player who didn't disconnect)
-                val winnerId = when {
-                    session[GameSessionsTable.player1Id] == disconnectedPlayerId -> 
-                        session[GameSessionsTable.player2Id]
-                    session[GameSessionsTable.player2Id] == disconnectedPlayerId -> 
-                        session[GameSessionsTable.player1Id]
+                val p1Id: String = session[GameSessionsTable.player1Id]
+                val p2Id: String? = session[GameSessionsTable.player2Id]
+                val winnerId: String? = when (disconnectedPlayerId) {
+                    p1Id -> p2Id
+                    p2Id -> p1Id
                     else -> null
                 }
                 
@@ -256,10 +249,10 @@ object GameRepository {
         return try {
             transaction {
                 MatchResultsTable
-                    .selectAll().where { MatchResultsTable.playerId eq playerId }
+                    .select { MatchResultsTable.playerId eq playerId }
                     .orderBy(MatchResultsTable.recordedAt, SortOrder.DESC)
                     .limit(limit)
-                    .map { row ->
+                    .map { row: ResultRow ->
                         MatchHistoryEntry(
                             sessionId = row[MatchResultsTable.sessionId].value.toString(),
                             isWinner = row[MatchResultsTable.isWinner],
