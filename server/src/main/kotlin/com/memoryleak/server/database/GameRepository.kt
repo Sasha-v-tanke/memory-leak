@@ -186,20 +186,21 @@ object GameRepository {
         
         try {
             transaction {
+                // First get current stats
+                val current = PlayerStatsTable
+                    .select { PlayerStatsTable.playerId eq playerId }
+                    .singleOrNull() ?: return@transaction
+                
+                // Then update with incremented values
                 PlayerStatsTable.update({ PlayerStatsTable.playerId eq playerId }) {
-                    with(SqlExpressionBuilder) {
-                        it.update(totalGames, totalGames + 1)
-                        if (won) {
-                            it.update(wins, wins + 1)
-                        } else {
-                            it.update(losses, losses + 1)
-                        }
-                        it.update(totalUnitsCreated, totalUnitsCreated + unitsCreated)
-                        it.update(totalUnitsKilled, totalUnitsKilled + unitsKilled)
-                        it.update(totalFactoriesBuilt, totalFactoriesBuilt + factoriesBuilt)
-                        it.update(totalCardsPlayed, totalCardsPlayed + cardsPlayed)
-                        it.update(totalPlayTimeSeconds, totalPlayTimeSeconds + playTimeSeconds)
-                    }
+                    it[totalGames] = current[totalGames] + 1
+                    it[wins] = current[wins] + if (won) 1 else 0
+                    it[losses] = current[losses] + if (won) 0 else 1
+                    it[totalUnitsCreated] = current[totalUnitsCreated] + unitsCreated
+                    it[totalUnitsKilled] = current[totalUnitsKilled] + unitsKilled
+                    it[totalFactoriesBuilt] = current[totalFactoriesBuilt] + factoriesBuilt
+                    it[totalCardsPlayed] = current[totalCardsPlayed] + cardsPlayed
+                    it[totalPlayTimeSeconds] = current[totalPlayTimeSeconds] + playTimeSeconds
                     it[lastPlayedAt] = Instant.now()
                 }
             }
