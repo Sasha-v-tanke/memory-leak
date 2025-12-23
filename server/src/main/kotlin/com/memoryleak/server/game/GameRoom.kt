@@ -362,9 +362,48 @@ class GameRoom {
                 CardType.BUILD_INTERPRETER_FACTORY -> buildFactory(sessionId, cmd.targetX, cmd.targetY, FactoryType.INTERPRETER)
                 CardType.BUILD_INHERITANCE_FACTORY -> buildFactory(sessionId, cmd.targetX, cmd.targetY, FactoryType.INHERITANCE)
                 
-                // Special
+                // Special - Upgrade card for inheritance factory
                 CardType.UPGRADE_INHERITANCE -> {
-                    // TODO: Implement unit combination at inheritance factory
+                    // Find nearest inheritance factory owned by player
+                    val nearestFactory = entities.values
+                        .filter { it.type == EntityType.FACTORY && it.ownerId == sessionId && it.factoryType == FactoryType.INHERITANCE }
+                        .minByOrNull { 
+                            val dx = it.x - cmd.targetX
+                            val dy = it.y - cmd.targetY
+                            dx * dx + dy * dy
+                        }
+                    
+                    if (nearestFactory != null) {
+                        // Find nearby units to combine (within 100px of the factory)
+                        val nearbyUnits = entities.values
+                            .filter { unit -> 
+                                unit.type == EntityType.UNIT && 
+                                unit.ownerId == sessionId &&
+                                kotlin.math.sqrt((unit.x - nearestFactory.x).let { dx -> dx * dx } + 
+                                               (unit.y - nearestFactory.y).let { dy -> dy * dy }.toDouble()) < 100
+                            }
+                            .take(2)
+                        
+                        if (nearbyUnits.size >= 2) {
+                            // Remove the sacrificed units
+                            nearbyUnits.forEach { entities.remove(it.id) }
+                            
+                            // Create upgraded unit with combined stats
+                            val combinedHp = nearbyUnits.sumOf { it.maxHp }
+                            val avgSpeed = nearbyUnits.map { it.speed }.average().toFloat()
+                            
+                            spawnUnitByCard(
+                                sessionId, 
+                                UnitType.INHERITANCE_DRONE, // Upgraded unit type
+                                nearestFactory.x + 20f, 
+                                nearestFactory.y,
+                                UnitStatsData.INHERITANCE_DRONE.copy(
+                                    maxHp = (combinedHp * 1.2).toInt(),
+                                    speed = avgSpeed * 1.1f
+                                )
+                            )
+                        }
+                    }
                 }
             }
             

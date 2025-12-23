@@ -188,7 +188,7 @@ class GameScreen(private val app: MemoryLeakApp) : Screen {
     }
     
     private fun isUnitCard(cardType: CardType?): Boolean {
-        return cardType?.name?.startsWith("SPAWN_") == true
+        return cardType?.isUnitCard() == true
     }
     
     override fun render(delta: Float) {

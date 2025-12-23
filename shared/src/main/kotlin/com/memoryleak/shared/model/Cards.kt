@@ -67,7 +67,16 @@ enum class CardType {
     SPAWN_THREAD_POOL,
     
     // Inheritance card (for upgrade factories)
-    UPGRADE_INHERITANCE
+    UPGRADE_INHERITANCE;
+    
+    /** Returns true if this card spawns a unit */
+    fun isUnitCard(): Boolean = name.startsWith("SPAWN_")
+    
+    /** Returns true if this card builds a factory */
+    fun isFactoryCard(): Boolean = name.startsWith("BUILD_")
+    
+    /** Returns true if this is a special action card */
+    fun isSpecialCard(): Boolean = this == UPGRADE_INHERITANCE
 }
 
 @Serializable
