@@ -1,5 +1,7 @@
 package com.memoryleak.server.game
 
+import com.memoryleak.server.database.DatabaseConfig
+import com.memoryleak.server.database.GameRepository
 import com.memoryleak.shared.model.*
 import com.memoryleak.shared.network.*
 import io.ktor.websocket.*
@@ -17,10 +19,28 @@ class GameRoom {
     private var gameScope = CoroutineScope(Dispatchers.Default)
     private var isRunning = false
     private var lastTickTime = System.currentTimeMillis()
+    
+    // Database session tracking
+    private var dbSessionId: UUID? = null
+    private var gameStartTime: Long = 0L
+    
+    // Player statistics tracking
+    private val playerStats = ConcurrentHashMap<String, PlayerGameStats>()
+    
+    // Statistics data class for tracking in-game metrics
+    private data class PlayerGameStats(
+        var unitsCreated: Int = 0,
+        var unitsLost: Int = 0,
+        var unitsKilled: Int = 0,
+        var factoriesBuilt: Int = 0,
+        var resourcesCaptured: Int = 0,
+        var cardsPlayed: Int = 0
+    )
 
     fun start() {
         if (isRunning) return
         isRunning = true
+        gameStartTime = System.currentTimeMillis()
         
         // Initialize Map Resources
         spawnResource("mem_1", ResourceType.MEMORY, 100f, 100f)
@@ -71,6 +91,24 @@ class GameRoom {
         
         players[sessionId] = player
         
+        // Initialize stats tracking for this player
+        playerStats[sessionId] = PlayerGameStats()
+        
+        // Database: Create or join session
+        if (DatabaseConfig.isConnected()) {
+            GameRepository.getOrCreatePlayerStats(sessionId, player.name)
+            
+            if (dbSessionId == null) {
+                // First player - create session
+                dbSessionId = GameRepository.createSession(sessionId)
+                println("[Database] Created game session: $dbSessionId")
+            } else {
+                // Second player - join session
+                GameRepository.joinSession(dbSessionId!!, sessionId)
+                println("[Database] Player $sessionId joined session: $dbSessionId")
+            }
+        }
+        
         // Spawn Instance for player
         val instanceId = UUID.randomUUID().toString()
         entities[instanceId] = GameEntity(
@@ -101,6 +139,10 @@ class GameRoom {
             unitType = unitType
         )
         entities[unitId] = entity
+        
+        // Track statistics
+        playerStats[ownerId]?.unitsCreated = (playerStats[ownerId]?.unitsCreated ?: 0) + 1
+        
         return entity
     }
 
@@ -200,6 +242,9 @@ class GameRoom {
             // Set Global Cooldown (1.5 seconds)
             player.globalCooldown = 1.5f
             
+            // Track card played
+            playerStats[sessionId]?.cardsPlayed = (playerStats[sessionId]?.cardsPlayed ?: 0) + 1
+            
             // Spawn unit or build
             when (card.type) {
                 // Legacy units
@@ -256,6 +301,8 @@ class GameRoom {
                         maxHp = 200,
                         speed = 35f
                     )
+                    // Track factory built
+                    playerStats[sessionId]?.factoriesBuilt = (playerStats[sessionId]?.factoriesBuilt ?: 0) + 1
                 }
             }
             
@@ -523,6 +570,14 @@ class GameRoom {
             deadUnitsThisFrame.add(target)
             entities.remove(target.id)
             
+            // Track kills and losses in statistics
+            if (target.type == EntityType.UNIT) {
+                // Attacker gets a kill
+                playerStats[attacker.ownerId]?.unitsKilled = (playerStats[attacker.ownerId]?.unitsKilled ?: 0) + 1
+                // Target owner loses a unit
+                playerStats[target.ownerId]?.unitsLost = (playerStats[target.ownerId]?.unitsLost ?: 0) + 1
+            }
+            
             // === GARBAGE COLLECTOR: Return resources on cleanup ===
             if (attacker.unitType == UnitType.GARBAGE_COLLECTOR) {
                 val owner = players[attacker.ownerId]
@@ -727,6 +782,52 @@ class GameRoom {
         players.keys.forEach { sessionId ->
              sessions[sessionId]?.send(Frame.Text(json))
         }
+        
+        // Save game results to database
+        saveGameResults(winnerId)
+    }
+    
+    private fun saveGameResults(winnerId: String) {
+        if (!DatabaseConfig.isConnected() || dbSessionId == null) return
+        
+        val gameDuration = ((System.currentTimeMillis() - gameStartTime) / 1000).toInt()
+        
+        // Complete session in database
+        GameRepository.completeSession(dbSessionId!!, winnerId)
+        
+        // Record match results for each player
+        players.forEach { (playerId, player) ->
+            val stats = playerStats[playerId] ?: PlayerGameStats()
+            val isWinner = playerId == winnerId
+            
+            GameRepository.recordMatchResult(
+                sessionId = dbSessionId!!,
+                playerId = playerId,
+                isWinner = isWinner,
+                finalMemory = player.memory,
+                finalCpu = player.cpu,
+                unitsCreated = stats.unitsCreated,
+                unitsLost = stats.unitsLost,
+                unitsKilled = stats.unitsKilled,
+                factoriesBuilt = stats.factoriesBuilt,
+                resourcesCaptured = stats.resourcesCaptured,
+                cardsPlayed = stats.cardsPlayed,
+                gameDurationSeconds = gameDuration
+            )
+            
+            // Update player aggregate stats
+            GameRepository.updatePlayerStats(
+                playerId = playerId,
+                won = isWinner,
+                unitsCreated = stats.unitsCreated,
+                unitsKilled = stats.unitsKilled,
+                factoriesBuilt = stats.factoriesBuilt,
+                cardsPlayed = stats.cardsPlayed,
+                playTimeSeconds = gameDuration
+            )
+        }
+        
+        println("[Database] Game results saved. Winner: $winnerId, Duration: ${gameDuration}s")
     }
     
     private fun distance(a: GameEntity, b: GameEntity): Float {
@@ -757,7 +858,14 @@ class GameRoom {
     }
 
     fun removePlayer(sessionId: String) {
+        // Track disconnect in database (if game was in progress)
+        if (DatabaseConfig.isConnected() && dbSessionId != null && players.size > 1) {
+            GameRepository.abandonSession(dbSessionId!!, sessionId)
+        }
+        
         players.remove(sessionId)
+        playerStats.remove(sessionId)
+        sessions.remove(sessionId)
         // Cleanup entities owned by this player
         entities.entries.removeIf { it.value.ownerId == sessionId }
     }
