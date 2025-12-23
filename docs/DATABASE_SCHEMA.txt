@@ -1,0 +1,253 @@
+=============================================================================
+                    MEMORY LEAK - DATABASE SCHEMA
+=============================================================================
+
+Database: PostgreSQL
+Connection Pool: HikariCP
+ORM: Exposed (Kotlin SQL Framework)
+
+=============================================================================
+TABLES
+=============================================================================
+
+1. PLAYERS TABLE
+   Stores player account information and authentication.
+   
+   Table: players
+   +------------------+---------------+----------------------------------+
+   | Column           | Type          | Description                      |
+   +------------------+---------------+----------------------------------+
+   | id               | UUID (PK)     | Unique player identifier         |
+   | username         | VARCHAR(64)   | Player username (unique)         |
+   | password_hash    | VARCHAR(256)  | Bcrypt hashed password           |
+   | email            | VARCHAR(128)  | Player email (optional, unique)  |
+   | created_at       | TIMESTAMP     | Account creation time            |
+   | last_login_at    | TIMESTAMP     | Last successful login            |
+   | is_active        | BOOLEAN       | Account active status            |
+   +------------------+---------------+----------------------------------+
+   
+   Indexes:
+   - PRIMARY KEY (id)
+   - UNIQUE INDEX ON (username)
+   - UNIQUE INDEX ON (email) WHERE email IS NOT NULL
+
+-----------------------------------------------------------------------------
+
+2. PLAYER_STATS TABLE
+   Aggregated statistics for each player across all games.
+   
+   Table: player_stats
+   +------------------------+---------------+------------------------------+
+   | Column                 | Type          | Description                  |
+   +------------------------+---------------+------------------------------+
+   | id                     | UUID (PK)     | Stats record ID              |
+   | player_id              | VARCHAR(64)   | Reference to player          |
+   | player_name            | VARCHAR(128)  | Cached player name           |
+   | total_games            | INTEGER       | Total games played           |
+   | wins                   | INTEGER       | Total wins                   |
+   | losses                 | INTEGER       | Total losses                 |
+   | total_units_created    | INTEGER       | Lifetime units created       |
+   | total_units_killed     | INTEGER       | Lifetime enemy units killed  |
+   | total_factories_built  | INTEGER       | Lifetime factories built     |
+   | total_cards_played     | INTEGER       | Lifetime cards played        |
+   | total_play_time_seconds| INTEGER       | Total play time in seconds   |
+   | first_played_at        | TIMESTAMP     | First game timestamp         |
+   | last_played_at         | TIMESTAMP     | Last game timestamp          |
+   +------------------------+---------------+------------------------------+
+   
+   Indexes:
+   - PRIMARY KEY (id)
+   - UNIQUE INDEX ON (player_id)
+
+-----------------------------------------------------------------------------
+
+3. GAME_SESSIONS TABLE
+   Records of individual game matches.
+   
+   Table: game_sessions
+   +---------------------+---------------+---------------------------------+
+   | Column              | Type          | Description                     |
+   +---------------------+---------------+---------------------------------+
+   | id                  | UUID (PK)     | Session unique identifier       |
+   | player1_id          | VARCHAR(64)   | First player ID                 |
+   | player2_id          | VARCHAR(64)   | Second player ID (nullable)     |
+   | start_time          | TIMESTAMP     | Game start time                 |
+   | end_time            | TIMESTAMP     | Game end time (nullable)        |
+   | winner_id           | VARCHAR(64)   | Winner player ID (nullable)     |
+   | status              | VARCHAR(32)   | Game status                     |
+   | map_seed            | INTEGER       | Random seed for map generation  |
+   | game_state_snapshot | TEXT          | JSON serialized game state      |
+   +---------------------+---------------+---------------------------------+
+   
+   Status Values:
+   - "waiting"   : Waiting for second player
+   - "active"    : Game in progress
+   - "completed" : Game finished normally
+   - "abandoned" : Player disconnected
+   
+   Indexes:
+   - PRIMARY KEY (id)
+   - INDEX ON (player1_id)
+   - INDEX ON (player2_id)
+   - INDEX ON (status)
+   - INDEX ON (start_time)
+
+-----------------------------------------------------------------------------
+
+4. MATCH_RESULTS TABLE
+   Detailed results for each player in each match.
+   
+   Table: match_results
+   +------------------------+---------------+------------------------------+
+   | Column                 | Type          | Description                  |
+   +------------------------+---------------+------------------------------+
+   | id                     | UUID (PK)     | Result record ID             |
+   | session_id             | UUID (FK)     | Reference to game_sessions   |
+   | player_id              | VARCHAR(64)   | Player ID                    |
+   | is_winner              | BOOLEAN       | Whether player won           |
+   | final_memory           | INTEGER       | Memory at game end           |
+   | final_cpu              | INTEGER       | CPU at game end              |
+   | units_created          | INTEGER       | Units created this game      |
+   | units_lost             | INTEGER       | Units lost this game         |
+   | units_killed           | INTEGER       | Enemy units killed           |
+   | factories_built        | INTEGER       | Factories built              |
+   | resources_captured     | INTEGER       | Resource nodes captured      |
+   | cards_played           | INTEGER       | Cards played                 |
+   | game_duration_seconds  | INTEGER       | Game length in seconds       |
+   | recorded_at            | TIMESTAMP     | Record timestamp             |
+   +------------------------+---------------+------------------------------+
+   
+   Indexes:
+   - PRIMARY KEY (id)
+   - FOREIGN KEY (session_id) REFERENCES game_sessions(id)
+   - INDEX ON (player_id)
+   - INDEX ON (recorded_at)
+
+-----------------------------------------------------------------------------
+
+5. PLAYER_DECKS TABLE
+   Saved deck configurations for players.
+   
+   Table: player_decks
+   +------------------+---------------+----------------------------------+
+   | Column           | Type          | Description                      |
+   +------------------+---------------+----------------------------------+
+   | id               | UUID (PK)     | Deck unique identifier           |
+   | player_id        | VARCHAR(64)   | Owner player ID                  |
+   | deck_name        | VARCHAR(64)   | User-defined deck name           |
+   | card_ids         | TEXT          | JSON array of card type IDs      |
+   | is_active        | BOOLEAN       | Currently selected deck          |
+   | created_at       | TIMESTAMP     | Deck creation time               |
+   | updated_at       | TIMESTAMP     | Last modification time           |
+   +------------------+---------------+----------------------------------+
+   
+   Indexes:
+   - PRIMARY KEY (id)
+   - INDEX ON (player_id)
+   - UNIQUE INDEX ON (player_id, deck_name)
+
+-----------------------------------------------------------------------------
+
+6. UNIT_STATISTICS TABLE
+   Per-unit-type statistics for analytics and balancing.
+   
+   Table: unit_statistics
+   +------------------+---------------+----------------------------------+
+   | Column           | Type          | Description                      |
+   +------------------+---------------+----------------------------------+
+   | id               | UUID (PK)     | Record ID                        |
+   | player_id        | VARCHAR(64)   | Player who used the unit         |
+   | session_id       | UUID (FK)     | Game session reference           |
+   | unit_type        | VARCHAR(64)   | Unit type enum name              |
+   | times_created    | INTEGER       | Times this unit was created      |
+   | kills_by_type    | INTEGER       | Kills made by this unit type     |
+   | deaths_by_type   | INTEGER       | Deaths of this unit type         |
+   | damage_dealt     | INTEGER       | Total damage dealt               |
+   | damage_taken     | INTEGER       | Total damage taken               |
+   | abilities_used   | INTEGER       | Special abilities activated      |
+   +------------------+---------------+----------------------------------+
+   
+   Indexes:
+   - PRIMARY KEY (id)
+   - INDEX ON (player_id)
+   - INDEX ON (unit_type)
+   - FOREIGN KEY (session_id) REFERENCES game_sessions(id)
+
+=============================================================================
+RELATIONSHIPS
+=============================================================================
+
+players (1) -----> (N) player_stats
+  A player has one stats record
+
+players (1) -----> (N) player_decks
+  A player can have multiple saved decks
+
+players (1) -----> (N) game_sessions (as player1 or player2)
+  A player can participate in many games
+
+game_sessions (1) -----> (N) match_results
+  Each game has results for each participant
+
+game_sessions (1) -----> (N) unit_statistics
+  Each game tracks unit usage statistics
+
+=============================================================================
+ENVIRONMENT VARIABLES
+=============================================================================
+
+DB_ENABLED   - Enable/disable database persistence (default: false)
+DB_HOST      - PostgreSQL host (default: localhost)
+DB_PORT      - PostgreSQL port (default: 5432)
+DB_NAME      - Database name (default: memoryleak)
+DB_USER      - Database user (default: postgres)
+DB_PASSWORD  - Database password (default: postgres)
+
+=============================================================================
+EXAMPLE QUERIES
+=============================================================================
+
+-- Get player win rate
+SELECT 
+    player_name,
+    wins,
+    losses,
+    ROUND(wins::numeric / NULLIF(total_games, 0) * 100, 2) as win_rate
+FROM player_stats
+WHERE player_id = 'player-uuid';
+
+-- Get recent match history
+SELECT 
+    gs.id as session_id,
+    gs.start_time,
+    gs.end_time,
+    mr.is_winner,
+    mr.units_killed,
+    mr.game_duration_seconds
+FROM match_results mr
+JOIN game_sessions gs ON mr.session_id = gs.id
+WHERE mr.player_id = 'player-uuid'
+ORDER BY gs.start_time DESC
+LIMIT 10;
+
+-- Get most used unit types globally
+SELECT 
+    unit_type,
+    SUM(times_created) as total_created,
+    SUM(kills_by_type) as total_kills,
+    ROUND(SUM(kills_by_type)::numeric / NULLIF(SUM(deaths_by_type), 0), 2) as kd_ratio
+FROM unit_statistics
+GROUP BY unit_type
+ORDER BY total_created DESC;
+
+-- Get leaderboard by wins
+SELECT 
+    player_name,
+    wins,
+    total_games,
+    total_units_killed
+FROM player_stats
+ORDER BY wins DESC
+LIMIT 100;
+
+=============================================================================

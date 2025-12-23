@@ -1,0 +1,463 @@
+=============================================================================
+                    MEMORY LEAK - UNIT DESCRIPTIONS
+=============================================================================
+
+This document describes all unit types in Memory Leak, their real-world
+programming concepts, and their in-game roles and abilities.
+
+=============================================================================
+BASIC PROCESS UNITS
+=============================================================================
+
+1. ALLOCATOR
+   Programming Concept: Memory allocator (malloc, new, etc.)
+   - Allocators in programming request and manage memory from the heap
+   - They track allocated blocks and handle fragmentation
+   
+   In-Game Role: Resource Gatherer
+   - Primary function: Capture resource nodes
+   - Passive ability: Generates Memory for owner every tick
+   - Low combat stats, focuses on economic advantage
+   Stats: HP 40 | Speed 60 | Damage 2 | Range 30
+
+2. GARBAGE_COLLECTOR
+   Programming Concept: Automatic memory management (GC)
+   - GC identifies and frees memory no longer in use
+   - Different algorithms: mark-sweep, reference counting, generational
+   
+   In-Game Role: Cleanup & Resource Recovery
+   - Returns resources when destroying enemy units
+   - Good sustain unit for prolonged battles
+   - Moderate stats across the board
+   Stats: HP 60 | Speed 70 | Damage 8 | Range 60
+
+3. BASIC_PROCESS
+   Programming Concept: OS Process
+   - Fundamental unit of execution in an operating system
+   - Has its own memory space and resources
+   
+   In-Game Role: Infantry
+   - Cheap, fast to produce
+   - Versatile basic combat unit
+   - Good for early game pressure
+   Stats: HP 35 | Speed 90 | Damage 6 | Range 45
+
+=============================================================================
+OOP (OBJECT-ORIENTED PROGRAMMING) UNITS
+=============================================================================
+
+4. INHERITANCE_DRONE
+   Programming Concept: Class Inheritance
+   - Child classes inherit properties/methods from parents
+   - Enables code reuse and hierarchical organization
+   
+   In-Game Role: Absorber
+   - Absorbs stats from nearby dead allied units
+   - Grows stronger as allies fall in battle
+   - Rewards aggressive, sacrifice-based strategies
+   Stats: HP 45 | Speed 85 | Damage 7 | Range 50
+   Ability: Gain 20% of dead ally's HP and 10% speed
+
+5. POLYMORPH_WARRIOR
+   Programming Concept: Polymorphism
+   - Objects of different types treated through common interface
+   - Runtime behavior changes based on actual type
+   
+   In-Game Role: Adaptive Fighter
+   - Damage type changes based on target
+   - +30% vs units, +50% vs factories, +100% vs base
+   - Excellent for focused strikes
+   Stats: HP 80 | Speed 75 | Damage 12 | Range 55
+
+6. ENCAPSULATION_SHIELD
+   Programming Concept: Encapsulation
+   - Hiding internal state, exposing controlled interface
+   - Data protection and access control
+   
+   In-Game Role: Tank / Protector
+   - Creates protective barrier for nearby allies
+   - High HP, low speed, defensive unit
+   - Essential for protecting fragile damage dealers
+   Stats: HP 100 | Speed 40 | Damage 3 | Range 40
+   Ability: Shield nearby allies (2s damage reduction)
+
+7. ABSTRACTION_AGENT
+   Programming Concept: Abstraction
+   - Hiding complex implementation behind simple interface
+   - Reducing complexity by focusing on essential features
+   
+   In-Game Role: Stealth Support
+   - Hides nearby allies from enemy targeting
+   - Fast, fragile, utility-focused
+   - Great for ambush setups
+   Stats: HP 35 | Speed 110 | Damage 4 | Range 50
+   Ability: Hide allies for 3 seconds
+
+=============================================================================
+REFLECTION & METAPROGRAMMING UNITS
+=============================================================================
+
+8. REFLECTION_SPY
+   Programming Concept: Runtime Reflection
+   - Examining and modifying program structure at runtime
+   - Inspecting class metadata, methods, fields
+   
+   In-Game Role: Scout / Intel
+   - Scans enemies to reveal their stats
+   - Very fast, very fragile
+   - Critical for strategic planning
+   Stats: HP 25 | Speed 130 | Damage 1 | Range 100
+   Ability: Mark enemy, revealing their stats
+
+9. CODE_INJECTOR
+   Programming Concept: Code Injection / Monkey Patching
+   - Modifying program behavior by inserting code
+   - Runtime modifications to existing systems
+   
+   In-Game Role: Saboteur
+   - Injects "bugs" into enemy factories
+   - Damages and slows factory production
+   - High-value strategic target
+   Stats: HP 50 | Speed 95 | Damage 10 | Range 70
+   Ability: Infect enemy factory (20 damage + slow)
+
+10. DYNAMIC_DISPATCHER
+    Programming Concept: Dynamic Dispatch / Virtual Methods
+    - Runtime method resolution based on object type
+    - vtable lookups, late binding
+    
+    In-Game Role: Commander / Buffer
+    - Boosts attack speed of nearby allies
+    - Moderate combat stats
+    - Force multiplier for unit groups
+    Stats: HP 55 | Speed 80 | Damage 5 | Range 50
+    Ability: +30% attack speed aura for 2 seconds
+
+=============================================================================
+ASYNC & PARALLELISM UNITS
+=============================================================================
+
+11. COROUTINE_ARCHER
+    Programming Concept: Coroutines
+    - Suspendable functions that can pause and resume
+    - Lightweight concurrency without threads
+    
+    In-Game Role: Ranged DPS
+    - High damage, long range
+    - Attacks ignore some armor (async bypasses blocking)
+    - Glass cannon archetype
+    Stats: HP 38 | Speed 95 | Damage 18 | Range 130
+    Special: +30% armor penetration
+
+12. PROMISE_KNIGHT
+    Programming Concept: Promises / Futures
+    - Placeholder for value that will be available later
+    - Deferred execution, eventual completion
+    
+    In-Game Role: Delayed Damage Tank
+    - When dies, deals AoE damage after delay
+    - Tanky, encourages enemy to kill it
+    - Punishes clustered enemies
+    Stats: HP 90 | Speed 65 | Damage 11 | Range 50
+    Ability: On death, AoE 15 damage to nearby enemies
+
+13. DEADLOCK_TRAP
+    Programming Concept: Deadlock
+    - Two or more processes waiting for each other
+    - System freeze due to circular dependency
+    
+    In-Game Role: Crowd Control
+    - Immobilizes clustered enemies
+    - Fragile, best placed carefully
+    - Devastating against deathballs
+    Stats: HP 20 | Speed 120 | Damage 2 | Range 60
+    Ability: If 2+ enemies nearby, freeze them for 3s
+
+=============================================================================
+FUNCTIONAL PROGRAMMING UNITS
+=============================================================================
+
+14. LAMBDA_SNIPER
+    Programming Concept: Lambda Functions
+    - Anonymous, inline functions
+    - Pure, no side effects, single expression
+    
+    In-Game Role: Assassin
+    - Massive single-target damage
+    - Very slow attack speed
+    - One-shot potential against key targets
+    Stats: HP 30 | Speed 70 | Damage 50 | Range 150
+    Ability: Pure strike - 50 instant damage (5s cooldown)
+
+15. RECURSIVE_BOMB
+    Programming Concept: Recursion
+    - Function calling itself with modified parameters
+    - Base case prevents infinite recursion
+    
+    In-Game Role: Splitting Unit
+    - On death, splits into 2 smaller bombs
+    - Can recurse up to 2 times (4 total mini-bombs)
+    - Creates chaos, hard to fully eliminate
+    Stats: HP 25 | Speed 100 | Damage 8 | Range 40
+    Ability: Split into 2 weaker copies on death
+
+16. HIGHER_ORDER_COMMANDER
+    Programming Concept: Higher-Order Functions
+    - Functions that take or return other functions
+    - map, filter, reduce paradigm
+    
+    In-Game Role: Army Buffer
+    - Buffs all nearby units
+    - Large effect radius
+    - Key strategic unit for group fights
+    Stats: HP 70 | Speed 60 | Damage 6 | Range 60
+    Ability: +20% damage to all allies within range
+
+=============================================================================
+NETWORK & COMMUNICATION UNITS
+=============================================================================
+
+17. API_GATEWAY
+    Programming Concept: API Gateway
+    - Single entry point for multiple services
+    - Request routing, authentication, rate limiting
+    
+    In-Game Role: Range Extender
+    - Extends attack range of nearby allies
+    - Acts as relay point
+    - Enables safe harassment
+    Stats: HP 65 | Speed 50 | Damage 4 | Range 70
+    Ability: +30% range for nearby allies
+
+18. WEBSOCKET_SCOUT
+    Programming Concept: WebSocket Protocol
+    - Full-duplex communication channel
+    - Persistent connection, real-time updates
+    
+    In-Game Role: Global Vision
+    - Continuously reveals all enemy positions
+    - Very fast, very fragile
+    - High priority target
+    Stats: HP 28 | Speed 140 | Damage 3 | Range 90
+    Ability: Reveal all enemies for 5 seconds
+
+19. RESTFUL_HEALER
+    Programming Concept: REST API
+    - GET, POST, PUT, DELETE operations
+    - Stateless, resource-based architecture
+    
+    In-Game Role: Full Support
+    - GET: Diagnose (check ally HP)
+    - POST: Heal allies
+    - PUT: Buff allies
+    - DELETE: Cleanse debuffs
+    Stats: HP 55 | Speed 85 | Damage 0 | Range 90
+    Ability: Heal 15 HP and cleanse debuffs
+
+=============================================================================
+STORAGE UNITS
+=============================================================================
+
+20. CACHE_RUNNER
+    Programming Concept: Cache Memory
+    - Fast temporary storage
+    - L1/L2/L3 cache, frequently accessed data
+    
+    In-Game Role: Speed Capture
+    - Fastest unit in game
+    - Extremely low HP
+    - Rush resource nodes before enemy
+    Stats: HP 20 | Speed 180 | Damage 4 | Range 35
+
+21. INDEXER
+    Programming Concept: Database Index
+    - Data structure for fast lookup
+    - B-trees, hash indexes
+    
+    In-Game Role: Target Marker
+    - Marks enemies for bonus damage
+    - All allies deal +25% to marked targets
+    - Enables focus fire strategies
+    Stats: HP 42 | Speed 75 | Damage 5 | Range 80
+    Ability: Mark target for +25% damage from all sources
+
+22. TRANSACTION_GUARD
+    Programming Concept: Database Transactions
+    - ACID properties
+    - Rollback on failure
+    
+    In-Game Role: Control Point Defender
+    - When dies, reverts nearby captured nodes
+    - Tanky defender
+    - Punishes killing it near contested nodes
+    Stats: HP 75 | Speed 55 | Damage 7 | Range 50
+    Ability: On death, nearby captured nodes revert to neutral
+
+=============================================================================
+NEW UNITS (EXPANDED ROSTER)
+=============================================================================
+
+23. POINTER
+    Programming Concept: Memory Pointers
+    - Variables holding memory addresses
+    - Dereferencing, pointer arithmetic
+    
+    In-Game Role: Teleport Striker
+    - Can instantly teleport to target location
+    - Low HP, high burst damage
+    - Hit and run tactics
+    Stats: HP 35 | Speed 80 | Damage 15 | Range 40
+    Ability: Teleport to target (3s cooldown)
+
+24. BUFFER
+    Programming Concept: Data Buffer
+    - Temporary data storage area
+    - Smooths data flow between producer/consumer
+    
+    In-Game Role: Damage Absorber
+    - Absorbs damage meant for nearby allies
+    - Acts as ablative armor
+    - Sacrificial protector
+    Stats: HP 80 | Speed 45 | Damage 0 | Range 30
+    Ability: Redirect 50% of ally damage to self
+
+25. ASSERT
+    Programming Concept: Assertions
+    - Runtime condition checking
+    - Fail-fast debugging
+    
+    In-Game Role: Execution Checker
+    - Instant kill on low HP enemies
+    - Otherwise deals minimal damage
+    - Finisher unit
+    Stats: HP 40 | Speed 100 | Damage 3 | Range 60
+    Ability: Execute enemies below 20% HP
+
+26. STATIC_CAST
+    Programming Concept: Static Type Casting
+    - Compile-time type conversion
+    - Safe, checked conversions
+    
+    In-Game Role: Stable Converter
+    - Converts enemy buffs to debuffs
+    - Reliable, predictable
+    - Counter to buff-heavy strategies
+    Stats: HP 50 | Speed 70 | Damage 8 | Range 50
+    Ability: Convert enemy buffs to equivalent debuffs
+
+27. DYNAMIC_CAST
+    Programming Concept: Dynamic Type Casting
+    - Runtime type checking and conversion
+    - Can fail if types incompatible
+    
+    In-Game Role: Risky Transformer
+    - 50% chance to double damage
+    - 50% chance to deal no damage
+    - High risk, high reward
+    Stats: HP 45 | Speed 85 | Damage 20 | Range 55
+    Special: 50% chance to deal 0 or 2x damage
+
+28. MUTEX_GUARDIAN
+    Programming Concept: Mutex (Mutual Exclusion)
+    - Synchronization primitive
+    - Prevents concurrent access
+    
+    In-Game Role: Lock Controller
+    - Locks single enemy (cannot attack or move)
+    - Can only lock one target at a time
+    - Powerful single-target CC
+    Stats: HP 60 | Speed 60 | Damage 5 | Range 70
+    Ability: Lock one enemy (4s duration)
+
+29. SEMAPHORE_CONTROLLER
+    Programming Concept: Semaphore
+    - Counter-based synchronization
+    - Controls access to limited resources
+    
+    In-Game Role: Group Controller
+    - Limits how many enemies can attack allies
+    - Creates chokepoint effect
+    - Tactical area denial
+    Stats: HP 55 | Speed 55 | Damage 4 | Range 80
+    Ability: Only 2 enemies can attack allies in range
+
+30. THREAD_POOL
+    Programming Concept: Thread Pool
+    - Pre-created worker threads
+    - Reusable execution resources
+    
+    In-Game Role: Spawner
+    - Periodically spawns weak worker units
+    - Creates sustained pressure
+    - Must be killed to stop spawning
+    Stats: HP 70 | Speed 30 | Damage 0 | Range 0
+    Ability: Spawn 1 Worker unit every 5 seconds
+
+=============================================================================
+FACTORY TYPES
+=============================================================================
+
+1. STANDARD_FACTORY (Default)
+   Programming: General compiler
+   - Balanced production time
+   - Works with all unit types
+   - Base production time multiplier: 1.0x
+
+2. COMPILER_FACTORY
+   Programming: AOT Compiler (C++, Rust)
+   - Slower initial production
+   - Produces stronger units (+10% stats)
+   - Production time: 1.5x, but +10% all stats
+
+3. INTERPRETER_FACTORY
+   Programming: JIT/Interpreter (Python, JavaScript)
+   - Fast production
+   - Weaker units (-15% stats)
+   - Production time: 0.5x, but -15% all stats
+
+4. INHERITANCE_FACTORY
+   Programming: Class Extension / Mixins
+   - Combines multiple units into upgraded version
+   - Requires 2+ units as input
+   - Outputs single powerful unit with combined traits
+
+=============================================================================
+UNIT CATEGORIES FOR DECK BUILDING
+=============================================================================
+
+Players select 10 cards for their deck from these categories:
+
+BASIC (Always available):
+- Allocator, Garbage Collector, Basic Process
+
+OOP:
+- Inheritance Drone, Polymorph Warrior, Encapsulation Shield, Abstraction Agent
+
+REFLECTION:
+- Reflection Spy, Code Injector, Dynamic Dispatcher
+
+ASYNC:
+- Coroutine Archer, Promise Knight, Deadlock Trap
+
+FUNCTIONAL:
+- Lambda Sniper, Recursive Bomb, Higher Order Commander
+
+NETWORK:
+- API Gateway, WebSocket Scout, RESTful Healer
+
+STORAGE:
+- Cache Runner, Indexer, Transaction Guard
+
+MEMORY:
+- Pointer, Buffer
+
+SAFETY:
+- Assert, Static Cast, Dynamic Cast
+
+CONCURRENCY:
+- Mutex Guardian, Semaphore Controller, Thread Pool
+
+FACTORIES (Always available, don't count towards 10):
+- Standard Factory, Compiler Factory, Interpreter Factory, Inheritance Factory
+
+=============================================================================

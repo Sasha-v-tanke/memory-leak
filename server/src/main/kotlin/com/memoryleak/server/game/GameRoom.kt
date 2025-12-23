@@ -16,13 +16,24 @@ class GameRoom {
     private val players = ConcurrentHashMap<String, PlayerState>()
     private val entities = ConcurrentHashMap<String, GameEntity>()
     
+    // Factory production queues
+    private val factoryQueues = ConcurrentHashMap<String, MutableList<ProductionQueueItem>>()
+    
     private var gameScope = CoroutineScope(Dispatchers.Default)
     private var isRunning = false
     private var lastTickTime = System.currentTimeMillis()
     
+    // Map configuration
+    val mapWidth = 1600f
+    val mapHeight = 800f
+    val sessionId = UUID.randomUUID().toString()
+    
     // Database session tracking
     private var dbSessionId: UUID? = null
     private var gameStartTime: Long = 0L
+    
+    // Player count tracking  
+    private var playerCount = 0
     
     // Player statistics tracking
     private val playerStats = ConcurrentHashMap<String, PlayerGameStats>()
@@ -42,11 +53,20 @@ class GameRoom {
         isRunning = true
         gameStartTime = System.currentTimeMillis()
         
-        // Initialize Map Resources
-        spawnResource("mem_1", ResourceType.MEMORY, 100f, 100f)
-        spawnResource("mem_2", ResourceType.MEMORY, 700f, 500f)
-        spawnResource("cpu_1", ResourceType.CPU, 700f, 100f)
-        spawnResource("cpu_2", ResourceType.CPU, 100f, 500f)
+        // Initialize Symmetric Map - resources mirrored across center
+        val centerX = mapWidth / 2
+        
+        // Memory nodes - symmetric
+        spawnResource("mem_1", ResourceType.MEMORY, centerX - 400, 200f)
+        spawnResource("mem_2", ResourceType.MEMORY, centerX + 400, mapHeight - 200)
+        
+        // CPU nodes - symmetric  
+        spawnResource("cpu_1", ResourceType.CPU, centerX - 400, mapHeight - 200)
+        spawnResource("cpu_2", ResourceType.CPU, centerX + 400, 200f)
+        
+        // Additional central resources
+        spawnResource("mem_center", ResourceType.MEMORY, centerX, mapHeight / 2 - 100)
+        spawnResource("cpu_center", ResourceType.CPU, centerX, mapHeight / 2 + 100)
 
         gameScope.launch {
             while (isRunning) {
@@ -76,17 +96,24 @@ class GameRoom {
         )
     }
 
-    suspend fun join(sessionId: String, socket: WebSocketSession): PlayerState {
+    suspend fun join(sessionId: String, socket: WebSocketSession, selectedDeck: List<String> = emptyList()): PlayerState {
         sessions[sessionId] = socket
+        playerCount++
+        
         val player = PlayerState(
             id = sessionId, 
             name = "Player-$sessionId",
             memory = 200,
-            cpu = 100
+            cpu = 100,
+            selectedDeckTypes = selectedDeck.toMutableList()
         )
         
-        // Initialize deck and draw starting hand
-        player.deck = DeckBuilder.createDefaultDeck()
+        // Initialize deck based on selection or default
+        player.deck = if (selectedDeck.isNotEmpty()) {
+            DeckBuilder.createDeckFromSelection(selectedDeck)
+        } else {
+            DeckBuilder.createDefaultDeck()
+        }
         repeat(4) { DeckBuilder.drawCard(player) }
         
         players[sessionId] = player
@@ -109,18 +136,44 @@ class GameRoom {
             }
         }
         
-        // Spawn Instance for player
+        // Symmetric spawning - Player 1 on left, Player 2 on right
+        val isPlayer1 = playerCount == 1
+        val baseX = if (isPlayer1) 150f else mapWidth - 150f
+        val baseY = mapHeight / 2
+        
+        // Spawn Instance (Base) for player
         val instanceId = UUID.randomUUID().toString()
         entities[instanceId] = GameEntity(
             id = instanceId,
             type = EntityType.INSTANCE,
-            x = (Math.random() * 800).toFloat(), // Random spawn
-            y = (Math.random() * 600).toFloat(),
+            x = baseX,
+            y = baseY,
             ownerId = sessionId,
             hp = 1000,
             maxHp = 1000,
-            speed = 15f  // Very slow
+            speed = 15f
         )
+        
+        // Spawn initial factory near base
+        val factoryId = UUID.randomUUID().toString()
+        val factoryX = if (isPlayer1) baseX + 60f else baseX - 60f
+        entities[factoryId] = GameEntity(
+            id = factoryId,
+            type = EntityType.FACTORY,
+            x = factoryX,
+            y = baseY,
+            ownerId = sessionId,
+            hp = 200,
+            maxHp = 200,
+            speed = 35f,
+            factoryType = FactoryType.STANDARD
+        )
+        factoryQueues[factoryId] = mutableListOf()
+        playerStats[sessionId]?.factoriesBuilt = 1
+        
+        // Send join acknowledgment
+        val joinPacket = JoinAckPacket(sessionId, mapWidth, mapHeight)
+        socket.send(Frame.Text(Json.encodeToString<Packet>(joinPacket)))
         
         return player
     }
@@ -289,20 +342,29 @@ class GameRoom {
                 CardType.SPAWN_INDEXER -> spawnUnitByCard(sessionId, UnitType.INDEXER, cmd.targetX, cmd.targetY, UnitStatsData.INDEXER)
                 CardType.SPAWN_TRANSACTION_GUARD -> spawnUnitByCard(sessionId, UnitType.TRANSACTION_GUARD, cmd.targetX, cmd.targetY, UnitStatsData.TRANSACTION_GUARD)
                 
-                CardType.BUILD_FACTORY -> {
-                    val factoryId = UUID.randomUUID().toString()
-                    entities[factoryId] = GameEntity(
-                        id = factoryId,
-                        type = EntityType.FACTORY,
-                        x = cmd.targetX,
-                        y = cmd.targetY,
-                        ownerId = sessionId,
-                        hp = 200,
-                        maxHp = 200,
-                        speed = 35f
-                    )
-                    // Track factory built
-                    playerStats[sessionId]?.factoriesBuilt = (playerStats[sessionId]?.factoriesBuilt ?: 0) + 1
+                // Memory Management
+                CardType.SPAWN_POINTER -> spawnUnitByCard(sessionId, UnitType.POINTER, cmd.targetX, cmd.targetY, UnitStatsData.POINTER)
+                CardType.SPAWN_BUFFER -> spawnUnitByCard(sessionId, UnitType.BUFFER, cmd.targetX, cmd.targetY, UnitStatsData.BUFFER)
+                
+                // Safety & Type
+                CardType.SPAWN_ASSERT -> spawnUnitByCard(sessionId, UnitType.ASSERT, cmd.targetX, cmd.targetY, UnitStatsData.ASSERT)
+                CardType.SPAWN_STATIC_CAST -> spawnUnitByCard(sessionId, UnitType.STATIC_CAST, cmd.targetX, cmd.targetY, UnitStatsData.STATIC_CAST)
+                CardType.SPAWN_DYNAMIC_CAST -> spawnUnitByCard(sessionId, UnitType.DYNAMIC_CAST, cmd.targetX, cmd.targetY, UnitStatsData.DYNAMIC_CAST)
+                
+                // Concurrency
+                CardType.SPAWN_MUTEX_GUARDIAN -> spawnUnitByCard(sessionId, UnitType.MUTEX_GUARDIAN, cmd.targetX, cmd.targetY, UnitStatsData.MUTEX_GUARDIAN)
+                CardType.SPAWN_SEMAPHORE_CONTROLLER -> spawnUnitByCard(sessionId, UnitType.SEMAPHORE_CONTROLLER, cmd.targetX, cmd.targetY, UnitStatsData.SEMAPHORE_CONTROLLER)
+                CardType.SPAWN_THREAD_POOL -> spawnUnitByCard(sessionId, UnitType.THREAD_POOL, cmd.targetX, cmd.targetY, UnitStatsData.THREAD_POOL)
+                
+                // Factories
+                CardType.BUILD_FACTORY -> buildFactory(sessionId, cmd.targetX, cmd.targetY, FactoryType.STANDARD)
+                CardType.BUILD_COMPILER_FACTORY -> buildFactory(sessionId, cmd.targetX, cmd.targetY, FactoryType.COMPILER)
+                CardType.BUILD_INTERPRETER_FACTORY -> buildFactory(sessionId, cmd.targetX, cmd.targetY, FactoryType.INTERPRETER)
+                CardType.BUILD_INHERITANCE_FACTORY -> buildFactory(sessionId, cmd.targetX, cmd.targetY, FactoryType.INHERITANCE)
+                
+                // Special
+                CardType.UPGRADE_INHERITANCE -> {
+                    // TODO: Implement unit combination at inheritance factory
                 }
             }
             
@@ -310,8 +372,24 @@ class GameRoom {
             DeckBuilder.drawCard(player)
         }
     }
-
-
+    
+    private fun buildFactory(ownerId: String, x: Float, y: Float, factoryType: FactoryType) {
+        val factoryId = UUID.randomUUID().toString()
+        entities[factoryId] = GameEntity(
+            id = factoryId,
+            type = EntityType.FACTORY,
+            x = x,
+            y = y,
+            ownerId = ownerId,
+            hp = 200,
+            maxHp = 200,
+            speed = 35f,
+            factoryType = factoryType
+        )
+        factoryQueues[factoryId] = mutableListOf()
+        playerStats[ownerId]?.factoriesBuilt = (playerStats[ownerId]?.factoriesBuilt ?: 0) + 1
+    }
+    
     private var lastTick = 0L
     private val deadUnitsThisFrame = mutableListOf<GameEntity>()  // For InheritanceDrone
     
@@ -838,9 +916,25 @@ class GameRoom {
 
     private suspend fun broadcastState() {
         try {
+            // Build factory states from queues
+            val factoryStates = factoryQueues.mapNotNull { (factoryId, queue) ->
+                val factory = entities[factoryId] ?: return@mapNotNull null
+                FactoryState(
+                    id = factoryId,
+                    ownerId = factory.ownerId,
+                    factoryType = factory.factoryType ?: FactoryType.STANDARD,
+                    productionQueue = queue.map { item ->
+                        QueuedUnit(item.unitType, item.remainingTime, item.targetX, item.targetY, item.targetEntityId)
+                    },
+                    x = factory.x,
+                    y = factory.y
+                )
+            }
+            
             val packet = StateUpdatePacket(
                 entities = entities.values.toList(),
                 players = players.values.toList(),
+                factories = factoryStates,
                 serverTime = System.currentTimeMillis()
             )
             val json = Json.encodeToString<Packet>(packet)
@@ -861,6 +955,25 @@ class GameRoom {
         // Track disconnect in database (if game was in progress)
         if (DatabaseConfig.isConnected() && dbSessionId != null && players.size > 1) {
             GameRepository.abandonSession(dbSessionId!!, sessionId)
+        }
+        
+        // Notify opponent of disconnect
+        gameScope.launch {
+            val opponentId = players.keys.firstOrNull { it != sessionId }
+            if (opponentId != null) {
+                val opponentSocket = sessions[opponentId]
+                if (opponentSocket != null) {
+                    try {
+                        val packet = OpponentDisconnectedPacket(
+                            message = "Your opponent has disconnected",
+                            youWin = true
+                        )
+                        opponentSocket.send(Frame.Text(Json.encodeToString<Packet>(packet)))
+                    } catch (e: Exception) {
+                        // Ignore
+                    }
+                }
+            }
         }
         
         players.remove(sessionId)

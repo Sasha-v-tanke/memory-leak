@@ -1,0 +1,257 @@
+=============================================================================
+                    MEMORY LEAK - SERVER API DOCUMENTATION
+=============================================================================
+
+Server: Ktor WebSocket Server
+Default Port: 8080
+Protocol: WebSocket JSON
+
+=============================================================================
+CONNECTION
+=============================================================================
+
+Connect to: ws://host:8080/game
+
+All messages are JSON encoded using Kotlinx Serialization polymorphic format.
+Each packet has a "type" field for deserialization.
+
+=============================================================================
+AUTHENTICATION PACKETS
+=============================================================================
+
+1. LOGIN REQUEST (Client -> Server)
+   Type: "login"
+   Fields:
+   - username: String - Player username
+   - password: String - Player password (hashed client-side)
+   
+   Example:
+   {
+     "type": "login",
+     "username": "player1",
+     "password": "hashed_password"
+   }
+
+2. REGISTER REQUEST (Client -> Server)
+   Type: "register"
+   Fields:
+   - username: String - Desired username
+   - password: String - Password (hashed client-side)
+   
+   Example:
+   {
+     "type": "register",
+     "username": "newplayer",
+     "password": "hashed_password"
+   }
+
+3. AUTH RESPONSE (Server -> Client)
+   Type: "auth_response"
+   Fields:
+   - success: Boolean - Whether auth succeeded
+   - playerId: String? - Player ID if successful
+   - message: String - Success/error message
+   - playerStats: PlayerStats? - Player statistics if successful
+   
+   Example (success):
+   {
+     "type": "auth_response",
+     "success": true,
+     "playerId": "uuid-here",
+     "message": "Login successful",
+     "playerStats": { ... }
+   }
+
+=============================================================================
+MATCHMAKING PACKETS
+=============================================================================
+
+4. FIND MATCH REQUEST (Client -> Server)
+   Type: "find_match"
+   Fields:
+   - selectedDeck: List<String> - List of card IDs in player's deck (10 cards)
+   
+   Example:
+   {
+     "type": "find_match",
+     "selectedDeck": ["card1", "card2", ...]
+   }
+
+5. CANCEL MATCHMAKING (Client -> Server)
+   Type: "cancel_match"
+   No additional fields.
+
+6. MATCH FOUND (Server -> Client)
+   Type: "match_found"
+   Fields:
+   - sessionId: String - Game session ID
+   - opponentName: String - Opponent's name
+   - mapWidth: Float - Map width
+   - mapHeight: Float - Map height
+   - isPlayer1: Boolean - Whether this client is player 1 (determines spawn side)
+   
+   Example:
+   {
+     "type": "match_found",
+     "sessionId": "session-uuid",
+     "opponentName": "player2",
+     "mapWidth": 1600.0,
+     "mapHeight": 800.0,
+     "isPlayer1": true
+   }
+
+=============================================================================
+GAME PACKETS (During Match)
+=============================================================================
+
+7. JOIN ACKNOWLEDGMENT (Server -> Client)
+   Type: "join_ack"
+   Fields:
+   - playerId: String - Assigned player ID for this session
+   - mapWidth: Float - Map width
+   - mapHeight: Float - Map height
+
+8. STATE UPDATE (Server -> Client)
+   Type: "state_update"
+   Fields:
+   - entities: List<GameEntity> - All game entities
+   - players: List<PlayerState> - All player states
+   - serverTime: Long - Server timestamp
+   
+   Broadcast every tick (60Hz).
+
+9. COMMAND (Client -> Server)
+   Type: "command"
+   Fields:
+   - commandType: CommandType - Type of command
+   - entityId: String? - Target entity ID (for MOVE, BUILD)
+   - targetX: Float - Target X coordinate
+   - targetY: Float - Target Y coordinate
+   - cardId: String? - Card ID (for PLAY_CARD)
+   - targetEntityId: String? - Target entity for unit (for PLAY_CARD)
+   
+   CommandType enum:
+   - MOVE - Move entity to position
+   - BUILD - Build at selected entity
+   - PLAY_CARD - Play card from hand
+   - SELECT_TARGET - Select target for spawned unit
+
+10. GAME OVER (Server -> Client)
+    Type: "game_over"
+    Fields:
+    - winnerId: String - Winner's player ID
+    - stats: GameEndStats - End game statistics
+
+11. OPPONENT DISCONNECTED (Server -> Client)
+    Type: "opponent_disconnected"
+    Fields:
+    - message: String - Disconnect message
+    - youWin: Boolean - Whether you win by forfeit
+
+=============================================================================
+PLAYER STATISTICS PACKETS
+=============================================================================
+
+12. GET STATS REQUEST (Client -> Server)
+    Type: "get_stats"
+    No additional fields.
+
+13. STATS RESPONSE (Server -> Client)
+    Type: "stats_response"
+    Fields:
+    - stats: PlayerStats - Player statistics object
+    
+    PlayerStats object:
+    - totalGames: Int
+    - wins: Int
+    - losses: Int
+    - totalUnitsCreated: Int
+    - totalUnitsKilled: Int
+    - totalFactoriesBuilt: Int
+    - totalCardsPlayed: Int
+    - totalPlayTimeSeconds: Int
+    - favoriteUnit: String? - Most played unit type
+
+=============================================================================
+DECK MANAGEMENT PACKETS
+=============================================================================
+
+14. GET ALL CARDS (Client -> Server)
+    Type: "get_all_cards"
+    No additional fields.
+
+15. ALL CARDS RESPONSE (Server -> Client)
+    Type: "all_cards_response"
+    Fields:
+    - cards: List<CardDefinition> - All available cards
+    
+    CardDefinition:
+    - id: String
+    - type: CardType
+    - name: String
+    - description: String
+    - memoryCost: Int
+    - cpuCost: Int
+    - category: String (Basic, OOP, Functional, Async, Network, Storage, etc.)
+
+16. SAVE DECK (Client -> Server)
+    Type: "save_deck"
+    Fields:
+    - deckName: String
+    - cardIds: List<String> - 10 card IDs
+    
+17. LOAD DECKS (Client -> Server)
+    Type: "load_decks"
+    No additional fields.
+
+18. DECKS RESPONSE (Server -> Client)
+    Type: "decks_response"
+    Fields:
+    - decks: List<SavedDeck>
+    
+    SavedDeck:
+    - id: String
+    - name: String
+    - cardIds: List<String>
+
+=============================================================================
+FACTORY SYSTEM
+=============================================================================
+
+Factories have production queues. When a player plays a unit card:
+
+1. Client sends PLAY_CARD with card info and target position
+2. Server finds the factory with shortest total queue time
+3. Unit is added to that factory's queue
+4. Factory produces units in FIFO order
+5. Unit spawns at factory position, then moves to target
+6. If target entity specified, unit pursues that target
+
+Factory Types:
+- STANDARD_FACTORY: Default factory, balanced production
+- COMPILER_FACTORY: Faster production for compiled units
+- INTERPRETER_FACTORY: Instant spawn for scripted units, lower stats
+- INHERITANCE_FACTORY: Combines units for upgrades
+
+=============================================================================
+ERROR HANDLING
+=============================================================================
+
+ERROR PACKET (Server -> Client)
+Type: "error"
+Fields:
+- code: Int - Error code
+- message: String - Error description
+
+Error Codes:
+- 1001: Invalid credentials
+- 1002: Username taken
+- 1003: Not authenticated
+- 2001: Not in matchmaking
+- 2002: Already in game
+- 3001: Invalid command
+- 3002: Not your turn
+- 3003: Insufficient resources
+- 3004: Invalid target
+
+=============================================================================

@@ -42,7 +42,9 @@ data class GameEntity(
     var targetEnemyId: String? = null,  // Current AI target
     var lastAbilityTime: Long = 0L,     // For ability cooldown
     var abilityData: String = "",        // JSON for unit-specific state
-    var inheritedStats: String = ""      // For InheritanceDrone (stores absorbed stats)
+    var inheritedStats: String = "",     // For InheritanceDrone (stores absorbed stats)
+    // Factory specific
+    var factoryType: com.memoryleak.shared.network.FactoryType? = null
 )
 
 @Serializable
@@ -54,7 +56,8 @@ data class PlayerState(
     var deck: MutableList<Card> = mutableListOf(),
     var hand: MutableList<Card> = mutableListOf(),
     var discardPile: MutableList<Card> = mutableListOf(),
-    var globalCooldown: Float = 0f // Seconds until next card can be played
+    var globalCooldown: Float = 0f, // Seconds until next card can be played
+    var selectedDeckTypes: MutableList<String> = mutableListOf()  // Selected deck card types
 )
 
 @Serializable
@@ -62,4 +65,14 @@ data class GameState(
     val entities: MutableMap<String, GameEntity>,
     val players: MutableMap<String, PlayerState>,
     var serverTime: Long = 0
+)
+
+// Production queue item for factories
+@Serializable
+data class ProductionQueueItem(
+    val unitType: UnitType,
+    var remainingTime: Float,  // Seconds until completion
+    val targetX: Float,
+    val targetY: Float,
+    val targetEntityId: String? = null  // Target for the unit to pursue after spawn
 )
