@@ -649,6 +649,9 @@ class MemoryLeakGame : ApplicationAdapter() {
                         CardType.SPAWN_RANGED -> "RANGED"
                         CardType.SPAWN_HEALER -> "HEALER"
                         CardType.BUILD_FACTORY -> "FACTORY"
+                        CardType.BUILD_COMPILER_FACTORY -> "COMPILER"
+                        CardType.BUILD_INTERPRETER_FACTORY -> "INTERP"
+                        CardType.BUILD_INHERITANCE_FACTORY -> "INH.FAC"
                         
                         // Basic Processes
                         CardType.SPAWN_ALLOCATOR -> "ALLOC"
@@ -685,6 +688,22 @@ class MemoryLeakGame : ApplicationAdapter() {
                         CardType.SPAWN_CACHE_RUNNER -> "CACHE"
                         CardType.SPAWN_INDEXER -> "INDEX"
                         CardType.SPAWN_TRANSACTION_GUARD -> "TRANS"
+                        
+                        // Memory
+                        CardType.SPAWN_POINTER -> "POINTER"
+                        CardType.SPAWN_BUFFER -> "BUFFER"
+                        
+                        // Safety
+                        CardType.SPAWN_ASSERT -> "ASSERT"
+                        CardType.SPAWN_STATIC_CAST -> "S.CAST"
+                        CardType.SPAWN_DYNAMIC_CAST -> "D.CAST"
+                        
+                        // Concurrency
+                        CardType.SPAWN_MUTEX_GUARDIAN -> "MUTEX"
+                        CardType.SPAWN_SEMAPHORE_CONTROLLER -> "SEMA"
+                        CardType.SPAWN_THREAD_POOL -> "T.POOL"
+                        
+                        CardType.UPGRADE_INHERITANCE -> "UPGRADE"
                     }
                     
                     font.color = Color.WHITE

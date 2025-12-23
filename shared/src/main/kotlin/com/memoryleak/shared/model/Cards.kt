@@ -9,7 +9,12 @@ enum class CardType {
     SPAWN_TANK,
     SPAWN_RANGED,
     SPAWN_HEALER,
+    
+    // Factory cards (always available)
     BUILD_FACTORY,
+    BUILD_COMPILER_FACTORY,
+    BUILD_INTERPRETER_FACTORY,
+    BUILD_INHERITANCE_FACTORY,
     
     // Basic Process cards
     SPAWN_ALLOCATOR,
@@ -45,7 +50,33 @@ enum class CardType {
     // Storage cards
     SPAWN_CACHE_RUNNER,
     SPAWN_INDEXER,
-    SPAWN_TRANSACTION_GUARD
+    SPAWN_TRANSACTION_GUARD,
+    
+    // Memory Management cards
+    SPAWN_POINTER,
+    SPAWN_BUFFER,
+    
+    // Safety & Type cards
+    SPAWN_ASSERT,
+    SPAWN_STATIC_CAST,
+    SPAWN_DYNAMIC_CAST,
+    
+    // Concurrency cards
+    SPAWN_MUTEX_GUARDIAN,
+    SPAWN_SEMAPHORE_CONTROLLER,
+    SPAWN_THREAD_POOL,
+    
+    // Inheritance card (for upgrade factories)
+    UPGRADE_INHERITANCE;
+    
+    /** Returns true if this card spawns a unit */
+    fun isUnitCard(): Boolean = name.startsWith("SPAWN_")
+    
+    /** Returns true if this card builds a factory */
+    fun isFactoryCard(): Boolean = name.startsWith("BUILD_")
+    
+    /** Returns true if this is a special action card */
+    fun isSpecialCard(): Boolean = this == UPGRADE_INHERITANCE
 }
 
 @Serializable
@@ -90,7 +121,24 @@ enum class UnitType {
     // Storage Units
     CACHE_RUNNER,       // Very fast, low HP, captures cache nodes
     INDEXER,            // Marks targets for bonus damage
-    TRANSACTION_GUARD   // Reverts node capture on death (rollback)
+    TRANSACTION_GUARD,  // Reverts node capture on death (rollback)
+    
+    // Memory Management Units
+    POINTER,            // Teleport striker - can jump to targets
+    BUFFER,             // Damage absorber - protects allies
+    
+    // Safety & Type Units
+    ASSERT,             // Executes low HP enemies instantly
+    STATIC_CAST,        // Converts enemy buffs to debuffs
+    DYNAMIC_CAST,       // Risky high damage (50% chance)
+    
+    // Concurrency Units
+    MUTEX_GUARDIAN,     // Locks single enemy
+    SEMAPHORE_CONTROLLER, // Limits attackers in area
+    THREAD_POOL,        // Spawns worker units
+    
+    // Worker unit (spawned by Thread Pool)
+    WORKER_THREAD
 }
 
 @Serializable
@@ -99,7 +147,8 @@ data class Card(
     val type: CardType,
     val memoryCost: Int,
     val cpuCost: Int,
-    var cooldownRemaining: Float = 0f  // seconds
+    var cooldownRemaining: Float = 0f,  // seconds
+    val productionTime: Float = 3f       // seconds to produce
 )
 
 @Serializable
@@ -109,7 +158,8 @@ data class UnitStats(
     val speed: Float,
     val damage: Int,
     val attackRange: Float,
-    val attackSpeed: Float  // attacks per second
+    val attackSpeed: Float,  // attacks per second
+    val productionTime: Float = 3f  // seconds to build
 )
 
 object UnitStatsData {
@@ -120,7 +170,8 @@ object UnitStatsData {
         speed = 150f,
         damage = 5,
         attackRange = 50f,
-        attackSpeed = 1.5f
+        attackSpeed = 1.5f,
+        productionTime = 2f
     )
     
     val TANK = UnitStats(
@@ -129,7 +180,8 @@ object UnitStatsData {
         speed = 50f,
         damage = 10,
         attackRange = 50f,
-        attackSpeed = 0.8f
+        attackSpeed = 0.8f,
+        productionTime = 5f
     )
     
     val RANGED = UnitStats(
@@ -138,7 +190,8 @@ object UnitStatsData {
         speed = 100f,
         damage = 15,
         attackRange = 120f,
-        attackSpeed = 1.0f
+        attackSpeed = 1.0f,
+        productionTime = 3f
     )
     
     val HEALER = UnitStats(
@@ -147,7 +200,8 @@ object UnitStatsData {
         speed = 80f,
         damage = 0,
         attackRange = 80f,
-        attackSpeed = 2.0f
+        attackSpeed = 2.0f,
+        productionTime = 4f
     )
     
     // === BASIC PROCESSES ===
@@ -157,7 +211,8 @@ object UnitStatsData {
         speed = 60f,
         damage = 2,
         attackRange = 30f,
-        attackSpeed = 0.5f  // Weak attacker, focuses on capturing
+        attackSpeed = 0.5f,
+        productionTime = 2f
     )
     
     val GARBAGE_COLLECTOR = UnitStats(
@@ -166,7 +221,8 @@ object UnitStatsData {
         speed = 70f,
         damage = 8,
         attackRange = 60f,
-        attackSpeed = 1.0f
+        attackSpeed = 1.0f,
+        productionTime = 3f
     )
     
     val BASIC_PROCESS = UnitStats(
@@ -175,7 +231,8 @@ object UnitStatsData {
         speed = 90f,
         damage = 6,
         attackRange = 45f,
-        attackSpeed = 1.2f
+        attackSpeed = 1.2f,
+        productionTime = 2f
     )
     
     // === OOP UNITS ===
@@ -185,16 +242,18 @@ object UnitStatsData {
         speed = 85f,
         damage = 7,
         attackRange = 50f,
-        attackSpeed = 1.0f  // Ability: Absorbs stats from dead allies
+        attackSpeed = 1.0f,
+        productionTime = 3f
     )
     
     val POLYMORPH_WARRIOR = UnitStats(
         type = UnitType.POLYMORPH_WARRIOR,
         maxHp = 80,
         speed = 75f,
-        damage = 12,  // Changes based on enemy type
+        damage = 12,
         attackRange = 55f,
-        attackSpeed = 1.1f
+        attackSpeed = 1.1f,
+        productionTime = 4f
     )
     
     val ENCAPSULATION_SHIELD = UnitStats(
@@ -203,7 +262,8 @@ object UnitStatsData {
         speed = 40f,
         damage = 3,
         attackRange = 40f,
-        attackSpeed = 0.5f  // Tank role, creates shield for allies
+        attackSpeed = 0.5f,
+        productionTime = 5f
     )
     
     val ABSTRACTION_AGENT = UnitStats(
@@ -212,7 +272,8 @@ object UnitStatsData {
         speed = 110f,
         damage = 4,
         attackRange = 50f,
-        attackSpeed = 0.8f  // Support: hides allies
+        attackSpeed = 0.8f,
+        productionTime = 3f
     )
     
     // === REFLECTION & METAPROGRAMMING ===
@@ -222,7 +283,8 @@ object UnitStatsData {
         speed = 130f,
         damage = 1,
         attackRange = 100f,
-        attackSpeed = 0.3f  // Very weak combat, strong scouting
+        attackSpeed = 0.3f,
+        productionTime = 2f
     )
     
     val CODE_INJECTOR = UnitStats(
@@ -231,7 +293,8 @@ object UnitStatsData {
         speed = 95f,
         damage = 10,
         attackRange = 70f,
-        attackSpeed = 0.7f  // Special ability targets factories
+        attackSpeed = 0.7f,
+        productionTime = 4f
     )
     
     val DYNAMIC_DISPATCHER = UnitStats(
@@ -240,7 +303,8 @@ object UnitStatsData {
         speed = 80f,
         damage = 5,
         attackRange = 50f,
-        attackSpeed = 1.5f  // Aura: boosts ally attack speed
+        attackSpeed = 1.5f,
+        productionTime = 3f
     )
     
     // === ASYNC & PARALLELISM ===
@@ -248,9 +312,10 @@ object UnitStatsData {
         type = UnitType.COROUTINE_ARCHER,
         maxHp = 38,
         speed = 95f,
-        damage = 18,  // High damage, ignores some armor
+        damage = 18,
         attackRange = 130f,
-        attackSpeed = 0.9f
+        attackSpeed = 0.9f,
+        productionTime = 4f
     )
     
     val PROMISE_KNIGHT = UnitStats(
@@ -259,7 +324,8 @@ object UnitStatsData {
         speed = 65f,
         damage = 11,
         attackRange = 50f,
-        attackSpeed = 1.0f  // On death: delayed AoE damage
+        attackSpeed = 1.0f,
+        productionTime = 5f
     )
     
     val DEADLOCK_TRAP = UnitStats(
@@ -268,7 +334,8 @@ object UnitStatsData {
         speed = 120f,
         damage = 2,
         attackRange = 60f,
-        attackSpeed = 0.5f  // Ability: immobilizes clustered enemies
+        attackSpeed = 0.5f,
+        productionTime = 2f
     )
     
     // === FUNCTIONAL PROGRAMMING ===
@@ -276,9 +343,10 @@ object UnitStatsData {
         type = UnitType.LAMBDA_SNIPER,
         maxHp = 30,
         speed = 70f,
-        damage = 50,  // One-shot ability
+        damage = 50,
         attackRange = 150f,
-        attackSpeed = 0.2f  // Very slow, but devastating
+        attackSpeed = 0.2f,
+        productionTime = 6f
     )
     
     val RECURSIVE_BOMB = UnitStats(
@@ -287,7 +355,8 @@ object UnitStatsData {
         speed = 100f,
         damage = 8,
         attackRange = 40f,
-        attackSpeed = 1.0f  // Splits into smaller bombs on death
+        attackSpeed = 1.0f,
+        productionTime = 3f
     )
     
     val HIGHER_ORDER_COMMANDER = UnitStats(
@@ -296,7 +365,8 @@ object UnitStatsData {
         speed = 60f,
         damage = 6,
         attackRange = 60f,
-        attackSpeed = 0.8f  // Buffs nearby units
+        attackSpeed = 0.8f,
+        productionTime = 5f
     )
     
     // === NETWORK & COMMUNICATION ===
@@ -306,7 +376,8 @@ object UnitStatsData {
         speed = 50f,
         damage = 4,
         attackRange = 70f,
-        attackSpeed = 0.6f  // Extends ally attack range
+        attackSpeed = 0.6f,
+        productionTime = 4f
     )
     
     val WEBSOCKET_SCOUT = UnitStats(
@@ -315,7 +386,8 @@ object UnitStatsData {
         speed = 140f,
         damage = 3,
         attackRange = 90f,
-        attackSpeed = 0.7f  // Continuously reveals enemy positions
+        attackSpeed = 0.7f,
+        productionTime = 2f
     )
     
     val RESTFUL_HEALER = UnitStats(
@@ -324,17 +396,19 @@ object UnitStatsData {
         speed = 85f,
         damage = 0,
         attackRange = 90f,
-        attackSpeed = 1.8f  // GET/POST/PUT/DELETE healing logic
+        attackSpeed = 1.8f,
+        productionTime = 4f
     )
     
     // === STORAGE UNITS ===
     val CACHE_RUNNER = UnitStats(
         type = UnitType.CACHE_RUNNER,
         maxHp = 20,
-        speed = 180f,  // Fastest unit
+        speed = 180f,
         damage = 4,
         attackRange = 35f,
-        attackSpeed = 1.5f
+        attackSpeed = 1.5f,
+        productionTime = 1f
     )
     
     val INDEXER = UnitStats(
@@ -343,7 +417,8 @@ object UnitStatsData {
         speed = 75f,
         damage = 5,
         attackRange = 80f,
-        attackSpeed = 0.9f  // Marks targets for bonus damage
+        attackSpeed = 0.9f,
+        productionTime = 3f
     )
     
     val TRANSACTION_GUARD = UnitStats(
@@ -352,7 +427,101 @@ object UnitStatsData {
         speed = 55f,
         damage = 7,
         attackRange = 50f,
-        attackSpeed = 0.8f  // Reverts capture on death
+        attackSpeed = 0.8f,
+        productionTime = 4f
+    )
+    
+    // === MEMORY MANAGEMENT ===
+    val POINTER = UnitStats(
+        type = UnitType.POINTER,
+        maxHp = 35,
+        speed = 80f,
+        damage = 15,
+        attackRange = 40f,
+        attackSpeed = 1.0f,
+        productionTime = 3f
+    )
+    
+    val BUFFER = UnitStats(
+        type = UnitType.BUFFER,
+        maxHp = 80,
+        speed = 45f,
+        damage = 0,
+        attackRange = 30f,
+        attackSpeed = 0f,
+        productionTime = 4f
+    )
+    
+    // === SAFETY & TYPE ===
+    val ASSERT = UnitStats(
+        type = UnitType.ASSERT,
+        maxHp = 40,
+        speed = 100f,
+        damage = 3,
+        attackRange = 60f,
+        attackSpeed = 1.2f,
+        productionTime = 2f
+    )
+    
+    val STATIC_CAST = UnitStats(
+        type = UnitType.STATIC_CAST,
+        maxHp = 50,
+        speed = 70f,
+        damage = 8,
+        attackRange = 50f,
+        attackSpeed = 0.9f,
+        productionTime = 3f
+    )
+    
+    val DYNAMIC_CAST = UnitStats(
+        type = UnitType.DYNAMIC_CAST,
+        maxHp = 45,
+        speed = 85f,
+        damage = 20,
+        attackRange = 55f,
+        attackSpeed = 0.8f,
+        productionTime = 3f
+    )
+    
+    // === CONCURRENCY ===
+    val MUTEX_GUARDIAN = UnitStats(
+        type = UnitType.MUTEX_GUARDIAN,
+        maxHp = 60,
+        speed = 60f,
+        damage = 5,
+        attackRange = 70f,
+        attackSpeed = 0.7f,
+        productionTime = 4f
+    )
+    
+    val SEMAPHORE_CONTROLLER = UnitStats(
+        type = UnitType.SEMAPHORE_CONTROLLER,
+        maxHp = 55,
+        speed = 55f,
+        damage = 4,
+        attackRange = 80f,
+        attackSpeed = 0.6f,
+        productionTime = 4f
+    )
+    
+    val THREAD_POOL = UnitStats(
+        type = UnitType.THREAD_POOL,
+        maxHp = 70,
+        speed = 30f,
+        damage = 0,
+        attackRange = 0f,
+        attackSpeed = 0f,
+        productionTime = 6f
+    )
+    
+    val WORKER_THREAD = UnitStats(
+        type = UnitType.WORKER_THREAD,
+        maxHp = 15,
+        speed = 120f,
+        damage = 4,
+        attackRange = 35f,
+        attackSpeed = 1.5f,
+        productionTime = 0f  // Spawned by Thread Pool
     )
     
     // Helper function to get stats by type
@@ -384,6 +553,162 @@ object UnitStatsData {
             UnitType.CACHE_RUNNER -> CACHE_RUNNER
             UnitType.INDEXER -> INDEXER
             UnitType.TRANSACTION_GUARD -> TRANSACTION_GUARD
+            UnitType.POINTER -> POINTER
+            UnitType.BUFFER -> BUFFER
+            UnitType.ASSERT -> ASSERT
+            UnitType.STATIC_CAST -> STATIC_CAST
+            UnitType.DYNAMIC_CAST -> DYNAMIC_CAST
+            UnitType.MUTEX_GUARDIAN -> MUTEX_GUARDIAN
+            UnitType.SEMAPHORE_CONTROLLER -> SEMAPHORE_CONTROLLER
+            UnitType.THREAD_POOL -> THREAD_POOL
+            UnitType.WORKER_THREAD -> WORKER_THREAD
+        }
+    }
+    
+    // Get card definition for UI display
+    fun getCardDefinition(cardType: CardType): com.memoryleak.shared.network.CardDefinition? {
+        return when (cardType) {
+            // Factory cards
+            CardType.BUILD_FACTORY -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Factory", "Build a standard factory", 100, 0, "Factory", 0f
+            )
+            CardType.BUILD_COMPILER_FACTORY -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Compiler", "Slow but stronger units", 150, 50, "Factory", 0f
+            )
+            CardType.BUILD_INTERPRETER_FACTORY -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Interpreter", "Fast but weaker units", 80, 30, "Factory", 0f
+            )
+            CardType.BUILD_INHERITANCE_FACTORY -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Inheritance", "Combine units for upgrades", 200, 100, "Factory", 0f
+            )
+            
+            // Basic units
+            CardType.SPAWN_SCOUT -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Scout", "Fast reconnaissance unit", 30, 20, "Basic", SCOUT.productionTime
+            )
+            CardType.SPAWN_TANK -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Tank", "Heavy armored unit", 80, 40, "Basic", TANK.productionTime
+            )
+            CardType.SPAWN_RANGED -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Ranged", "Long range attacker", 50, 60, "Basic", RANGED.productionTime
+            )
+            CardType.SPAWN_HEALER -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Healer", "Heals nearby allies", 60, 50, "Basic", HEALER.productionTime
+            )
+            
+            // Process units
+            CardType.SPAWN_ALLOCATOR -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Allocator", "Captures nodes, generates memory", 40, 30, "Process", ALLOCATOR.productionTime
+            )
+            CardType.SPAWN_GARBAGE_COLLECTOR -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "GC", "Returns resources on kills", 50, 40, "Process", GARBAGE_COLLECTOR.productionTime
+            )
+            CardType.SPAWN_BASIC_PROCESS -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Process", "Cheap basic infantry", 35, 25, "Process", BASIC_PROCESS.productionTime
+            )
+            
+            // OOP units
+            CardType.SPAWN_INHERITANCE_DRONE -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Inherit", "Absorbs dead ally stats", 60, 45, "OOP", INHERITANCE_DRONE.productionTime
+            )
+            CardType.SPAWN_POLYMORPH_WARRIOR -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Polymorph", "Adapts damage to target", 85, 60, "OOP", POLYMORPH_WARRIOR.productionTime
+            )
+            CardType.SPAWN_ENCAPSULATION_SHIELD -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Shield", "Protects nearby allies", 100, 50, "OOP", ENCAPSULATION_SHIELD.productionTime
+            )
+            CardType.SPAWN_ABSTRACTION_AGENT -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Abstract", "Hides allies from targeting", 45, 35, "OOP", ABSTRACTION_AGENT.productionTime
+            )
+            
+            // Reflection units
+            CardType.SPAWN_REFLECTION_SPY -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Spy", "Reveals enemy stats", 30, 25, "Reflection", REFLECTION_SPY.productionTime
+            )
+            CardType.SPAWN_CODE_INJECTOR -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Injector", "Damages enemy factories", 70, 55, "Reflection", CODE_INJECTOR.productionTime
+            )
+            CardType.SPAWN_DYNAMIC_DISPATCHER -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Dispatch", "Boosts ally attack speed", 65, 50, "Reflection", DYNAMIC_DISPATCHER.productionTime
+            )
+            
+            // Async units
+            CardType.SPAWN_COROUTINE_ARCHER -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Coroutine", "High damage, ignores armor", 75, 65, "Async", COROUTINE_ARCHER.productionTime
+            )
+            CardType.SPAWN_PROMISE_KNIGHT -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Promise", "AoE damage on death", 90, 70, "Async", PROMISE_KNIGHT.productionTime
+            )
+            CardType.SPAWN_DEADLOCK_TRAP -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Deadlock", "Freezes clustered enemies", 40, 40, "Async", DEADLOCK_TRAP.productionTime
+            )
+            
+            // Functional units
+            CardType.SPAWN_LAMBDA_SNIPER -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Lambda", "One-shot assassin", 100, 80, "Functional", LAMBDA_SNIPER.productionTime
+            )
+            CardType.SPAWN_RECURSIVE_BOMB -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Recursive", "Splits on death", 55, 50, "Functional", RECURSIVE_BOMB.productionTime
+            )
+            CardType.SPAWN_HIGHER_ORDER_COMMANDER -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "H.O.C.", "Buffs all nearby allies", 80, 65, "Functional", HIGHER_ORDER_COMMANDER.productionTime
+            )
+            
+            // Network units
+            CardType.SPAWN_API_GATEWAY -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "API", "Extends ally range", 70, 55, "Network", API_GATEWAY.productionTime
+            )
+            CardType.SPAWN_WEBSOCKET_SCOUT -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "WebSocket", "Reveals all enemies", 35, 30, "Network", WEBSOCKET_SCOUT.productionTime
+            )
+            CardType.SPAWN_RESTFUL_HEALER -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "RESTful", "Full support healer", 70, 60, "Network", RESTFUL_HEALER.productionTime
+            )
+            
+            // Storage units
+            CardType.SPAWN_CACHE_RUNNER -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Cache", "Fastest unit", 25, 20, "Storage", CACHE_RUNNER.productionTime
+            )
+            CardType.SPAWN_INDEXER -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Indexer", "Marks for bonus damage", 50, 45, "Storage", INDEXER.productionTime
+            )
+            CardType.SPAWN_TRANSACTION_GUARD -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Transaction", "Rollback on death", 75, 60, "Storage", TRANSACTION_GUARD.productionTime
+            )
+            
+            // Memory units
+            CardType.SPAWN_POINTER -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Pointer", "Teleport striker", 60, 50, "Memory", POINTER.productionTime
+            )
+            CardType.SPAWN_BUFFER -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Buffer", "Absorbs ally damage", 70, 40, "Memory", BUFFER.productionTime
+            )
+            
+            // Safety units
+            CardType.SPAWN_ASSERT -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Assert", "Execute low HP enemies", 45, 35, "Safety", ASSERT.productionTime
+            )
+            CardType.SPAWN_STATIC_CAST -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Static Cast", "Convert buffs to debuffs", 55, 45, "Safety", STATIC_CAST.productionTime
+            )
+            CardType.SPAWN_DYNAMIC_CAST -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Dynamic Cast", "50% 2x or 0 damage", 50, 55, "Safety", DYNAMIC_CAST.productionTime
+            )
+            
+            // Concurrency units
+            CardType.SPAWN_MUTEX_GUARDIAN -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Mutex", "Locks single enemy", 65, 55, "Concurrency", MUTEX_GUARDIAN.productionTime
+            )
+            CardType.SPAWN_SEMAPHORE_CONTROLLER -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Semaphore", "Limits attackers", 70, 60, "Concurrency", SEMAPHORE_CONTROLLER.productionTime
+            )
+            CardType.SPAWN_THREAD_POOL -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Thread Pool", "Spawns workers", 90, 70, "Concurrency", THREAD_POOL.productionTime
+            )
+            
+            CardType.UPGRADE_INHERITANCE -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Upgrade", "Combine units at Inheritance Factory", 50, 50, "Special", 0f
+            )
         }
     }
 }
