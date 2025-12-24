@@ -703,6 +703,12 @@ class MemoryLeakGame : ApplicationAdapter() {
                         CardType.SPAWN_SEMAPHORE_CONTROLLER -> "SEMA"
                         CardType.SPAWN_THREAD_POOL -> "T.POOL"
                         
+                        // Capture & Resource
+                        CardType.SPAWN_MEMORY_MINER -> "M.MINE"
+                        CardType.SPAWN_CPU_HARVESTER -> "C.HARV"
+                        CardType.SPAWN_RESOURCE_CLONER -> "CLONE"
+                        CardType.SPAWN_NODE_DEFENDER -> "N.DEF"
+                        
                         CardType.UPGRADE_INHERITANCE -> "UPGRADE"
                     }
                     

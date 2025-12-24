@@ -115,7 +115,12 @@ class GameRoom {
         } else {
             DeckBuilder.createDefaultDeck()
         }
-        repeat(4) { DeckBuilder.drawCard(player) }
+        
+        // Initialize permanent factory card (always in hand)
+        DeckBuilder.initializePermanentFactoryCard(player)
+        
+        // Draw 4 regular cards
+        repeat(4) { DeckBuilder.drawCard(player, false) }
         
         players[sessionId] = player
         
@@ -260,21 +265,37 @@ class GameRoom {
             
             // NEW: Check Global Cooldown
             if (player.globalCooldown > 0) {
-                // Ignore command if on cooldown
+                // Ignore command if on cooldown - refund card
+                player.hand.add(card)
+                player.discardPile.remove(card)
                 return
             }
 
-            // NEW: Check if spawning near base
-            val myBase = entities.values.find { it.ownerId == sessionId && it.type == EntityType.INSTANCE }
-            if (myBase != null) {
-                val dx = cmd.targetX - myBase.x
-                val dy = cmd.targetY - myBase.y
-                val distSq = dx*dx + dy*dy
-                val maxDist = 200f // REDUCED Spawn radius (was 400)
-                
-                if (distSq > maxDist * maxDist) {
-                    println("Spawn too far from base!")
-                    // Refund card
+            // For factory cards, check if building near base
+            if (card.type.isFactoryCard()) {
+                val myBase = entities.values.find { it.ownerId == sessionId && it.type == EntityType.INSTANCE }
+                if (myBase != null) {
+                    val dx = cmd.targetX - myBase.x
+                    val dy = cmd.targetY - myBase.y
+                    val distSq = dx*dx + dy*dy
+                    val maxDist = 200f
+                    
+                    if (distSq > maxDist * maxDist) {
+                        println("Factory too far from base!")
+                        player.hand.add(card)
+                        player.discardPile.remove(card)
+                        return
+                    }
+                }
+            }
+            
+            // For unit cards, check if player has factories (required for unit production)
+            if (card.type.isUnitCard()) {
+                val playerFactories = entities.values.filter { 
+                    it.type == EntityType.FACTORY && it.ownerId == sessionId 
+                }
+                if (playerFactories.isEmpty()) {
+                    println("No factories - cannot produce units!")
                     player.hand.add(card)
                     player.discardPile.remove(card)
                     return
@@ -299,117 +320,85 @@ class GameRoom {
             // Track card played
             playerStats[sessionId]?.cardsPlayed = (playerStats[sessionId]?.cardsPlayed ?: 0) + 1
             
-            // Spawn unit or build
-            when (card.type) {
-                // Legacy units
-                CardType.SPAWN_SCOUT -> spawnUnitByCard(sessionId, UnitType.SCOUT, cmd.targetX, cmd.targetY, UnitStatsData.SCOUT)
-                CardType.SPAWN_TANK -> spawnUnitByCard(sessionId, UnitType.TANK, cmd.targetX, cmd.targetY, UnitStatsData.TANK)
-                CardType.SPAWN_RANGED -> spawnUnitByCard(sessionId, UnitType.RANGED, cmd.targetX, cmd.targetY, UnitStatsData.RANGED)
-                CardType.SPAWN_HEALER -> spawnUnitByCard(sessionId, UnitType.HEALER, cmd.targetX, cmd.targetY, UnitStatsData.HEALER)
+            // Process unit cards via production queue, factory cards directly
+            if (card.type.isUnitCard()) {
+                // Get unit type and stats for this card
+                val (unitType, stats) = getUnitTypeAndStats(card.type) ?: run {
+                    // Unknown unit type - refund
+                    player.hand.add(card)
+                    player.discardPile.remove(card)
+                    player.memory += card.memoryCost
+                    player.cpu += card.cpuCost
+                    return
+                }
                 
-                // Basic Processes
-                CardType.SPAWN_ALLOCATOR -> spawnUnitByCard(sessionId, UnitType.ALLOCATOR, cmd.targetX, cmd.targetY, UnitStatsData.ALLOCATOR)
-                CardType.SPAWN_GARBAGE_COLLECTOR -> spawnUnitByCard(sessionId, UnitType.GARBAGE_COLLECTOR, cmd.targetX, cmd.targetY, UnitStatsData.GARBAGE_COLLECTOR)
-                CardType.SPAWN_BASIC_PROCESS -> spawnUnitByCard(sessionId, UnitType.BASIC_PROCESS, cmd.targetX, cmd.targetY, UnitStatsData.BASIC_PROCESS)
-                
-                // OOP Units
-                CardType.SPAWN_INHERITANCE_DRONE -> spawnUnitByCard(sessionId, UnitType.INHERITANCE_DRONE, cmd.targetX, cmd.targetY, UnitStatsData.INHERITANCE_DRONE)
-                CardType.SPAWN_POLYMORPH_WARRIOR -> spawnUnitByCard(sessionId, UnitType.POLYMORPH_WARRIOR, cmd.targetX, cmd.targetY, UnitStatsData.POLYMORPH_WARRIOR)
-                CardType.SPAWN_ENCAPSULATION_SHIELD -> spawnUnitByCard(sessionId, UnitType.ENCAPSULATION_SHIELD, cmd.targetX, cmd.targetY, UnitStatsData.ENCAPSULATION_SHIELD)
-                CardType.SPAWN_ABSTRACTION_AGENT -> spawnUnitByCard(sessionId, UnitType.ABSTRACTION_AGENT, cmd.targetX, cmd.targetY, UnitStatsData.ABSTRACTION_AGENT)
-                
-                // Reflection & Metaprogramming
-                CardType.SPAWN_REFLECTION_SPY -> spawnUnitByCard(sessionId, UnitType.REFLECTION_SPY, cmd.targetX, cmd.targetY, UnitStatsData.REFLECTION_SPY)
-                CardType.SPAWN_CODE_INJECTOR -> spawnUnitByCard(sessionId, UnitType.CODE_INJECTOR, cmd.targetX, cmd.targetY, UnitStatsData.CODE_INJECTOR)
-                CardType.SPAWN_DYNAMIC_DISPATCHER -> spawnUnitByCard(sessionId, UnitType.DYNAMIC_DISPATCHER, cmd.targetX, cmd.targetY, UnitStatsData.DYNAMIC_DISPATCHER)
-                
-                // Async & Parallelism
-                CardType.SPAWN_COROUTINE_ARCHER -> spawnUnitByCard(sessionId, UnitType.COROUTINE_ARCHER, cmd.targetX, cmd.targetY, UnitStatsData.COROUTINE_ARCHER)
-                CardType.SPAWN_PROMISE_KNIGHT -> spawnUnitByCard(sessionId, UnitType.PROMISE_KNIGHT, cmd.targetX, cmd.targetY, UnitStatsData.PROMISE_KNIGHT)
-                CardType.SPAWN_DEADLOCK_TRAP -> spawnUnitByCard(sessionId, UnitType.DEADLOCK_TRAP, cmd.targetX, cmd.targetY, UnitStatsData.DEADLOCK_TRAP)
-                
-                // Functional Programming
-                CardType.SPAWN_LAMBDA_SNIPER -> spawnUnitByCard(sessionId, UnitType.LAMBDA_SNIPER, cmd.targetX, cmd.targetY, UnitStatsData.LAMBDA_SNIPER)
-                CardType.SPAWN_RECURSIVE_BOMB -> spawnUnitByCard(sessionId, UnitType.RECURSIVE_BOMB, cmd.targetX, cmd.targetY, UnitStatsData.RECURSIVE_BOMB)
-                CardType.SPAWN_HIGHER_ORDER_COMMANDER -> spawnUnitByCard(sessionId, UnitType.HIGHER_ORDER_COMMANDER, cmd.targetX, cmd.targetY, UnitStatsData.HIGHER_ORDER_COMMANDER)
-                
-                // Network & Communication
-                CardType.SPAWN_API_GATEWAY -> spawnUnitByCard(sessionId, UnitType.API_GATEWAY, cmd.targetX, cmd.targetY, UnitStatsData.API_GATEWAY)
-                CardType.SPAWN_WEBSOCKET_SCOUT -> spawnUnitByCard(sessionId, UnitType.WEBSOCKET_SCOUT, cmd.targetX, cmd.targetY, UnitStatsData.WEBSOCKET_SCOUT)
-                CardType.SPAWN_RESTFUL_HEALER -> spawnUnitByCard(sessionId, UnitType.RESTFUL_HEALER, cmd.targetX, cmd.targetY, UnitStatsData.RESTFUL_HEALER)
-                
-                // Storage Units
-                CardType.SPAWN_CACHE_RUNNER -> spawnUnitByCard(sessionId, UnitType.CACHE_RUNNER, cmd.targetX, cmd.targetY, UnitStatsData.CACHE_RUNNER)
-                CardType.SPAWN_INDEXER -> spawnUnitByCard(sessionId, UnitType.INDEXER, cmd.targetX, cmd.targetY, UnitStatsData.INDEXER)
-                CardType.SPAWN_TRANSACTION_GUARD -> spawnUnitByCard(sessionId, UnitType.TRANSACTION_GUARD, cmd.targetX, cmd.targetY, UnitStatsData.TRANSACTION_GUARD)
-                
-                // Memory Management
-                CardType.SPAWN_POINTER -> spawnUnitByCard(sessionId, UnitType.POINTER, cmd.targetX, cmd.targetY, UnitStatsData.POINTER)
-                CardType.SPAWN_BUFFER -> spawnUnitByCard(sessionId, UnitType.BUFFER, cmd.targetX, cmd.targetY, UnitStatsData.BUFFER)
-                
-                // Safety & Type
-                CardType.SPAWN_ASSERT -> spawnUnitByCard(sessionId, UnitType.ASSERT, cmd.targetX, cmd.targetY, UnitStatsData.ASSERT)
-                CardType.SPAWN_STATIC_CAST -> spawnUnitByCard(sessionId, UnitType.STATIC_CAST, cmd.targetX, cmd.targetY, UnitStatsData.STATIC_CAST)
-                CardType.SPAWN_DYNAMIC_CAST -> spawnUnitByCard(sessionId, UnitType.DYNAMIC_CAST, cmd.targetX, cmd.targetY, UnitStatsData.DYNAMIC_CAST)
-                
-                // Concurrency
-                CardType.SPAWN_MUTEX_GUARDIAN -> spawnUnitByCard(sessionId, UnitType.MUTEX_GUARDIAN, cmd.targetX, cmd.targetY, UnitStatsData.MUTEX_GUARDIAN)
-                CardType.SPAWN_SEMAPHORE_CONTROLLER -> spawnUnitByCard(sessionId, UnitType.SEMAPHORE_CONTROLLER, cmd.targetX, cmd.targetY, UnitStatsData.SEMAPHORE_CONTROLLER)
-                CardType.SPAWN_THREAD_POOL -> spawnUnitByCard(sessionId, UnitType.THREAD_POOL, cmd.targetX, cmd.targetY, UnitStatsData.THREAD_POOL)
-                
-                // Factories
-                CardType.BUILD_FACTORY -> buildFactory(sessionId, cmd.targetX, cmd.targetY, FactoryType.STANDARD)
-                CardType.BUILD_COMPILER_FACTORY -> buildFactory(sessionId, cmd.targetX, cmd.targetY, FactoryType.COMPILER)
-                CardType.BUILD_INTERPRETER_FACTORY -> buildFactory(sessionId, cmd.targetX, cmd.targetY, FactoryType.INTERPRETER)
-                CardType.BUILD_INHERITANCE_FACTORY -> buildFactory(sessionId, cmd.targetX, cmd.targetY, FactoryType.INHERITANCE)
-                
-                // Special - Upgrade card for inheritance factory
-                CardType.UPGRADE_INHERITANCE -> {
-                    // Find nearest inheritance factory owned by player
-                    val nearestFactory = entities.values
-                        .filter { it.type == EntityType.FACTORY && it.ownerId == sessionId && it.factoryType == FactoryType.INHERITANCE }
-                        .minByOrNull { 
-                            val dx = it.x - cmd.targetX
-                            val dy = it.y - cmd.targetY
-                            dx * dx + dy * dy
-                        }
+                // Queue unit production - targetEntityId is the priority target
+                if (!queueUnitProduction(sessionId, unitType, stats, cmd.targetEntityId)) {
+                    // Failed to queue - refund
+                    player.hand.add(card)
+                    player.discardPile.remove(card)
+                    player.memory += card.memoryCost
+                    player.cpu += card.cpuCost
+                    return
+                }
+            } else {
+                // Non-unit cards (factories, special actions)
+                when (card.type) {
+                    // Factories - build at target location
+                    CardType.BUILD_FACTORY -> buildFactory(sessionId, cmd.targetX, cmd.targetY, FactoryType.STANDARD)
+                    CardType.BUILD_COMPILER_FACTORY -> buildFactory(sessionId, cmd.targetX, cmd.targetY, FactoryType.COMPILER)
+                    CardType.BUILD_INTERPRETER_FACTORY -> buildFactory(sessionId, cmd.targetX, cmd.targetY, FactoryType.INTERPRETER)
+                    CardType.BUILD_INHERITANCE_FACTORY -> buildFactory(sessionId, cmd.targetX, cmd.targetY, FactoryType.INHERITANCE)
                     
-                    if (nearestFactory != null) {
-                        // Find nearby units to combine (within 100px of the factory)
-                        val nearbyUnits = entities.values
-                            .filter { unit -> 
-                                unit.type == EntityType.UNIT && 
-                                unit.ownerId == sessionId &&
-                                kotlin.math.sqrt((unit.x - nearestFactory.x).let { dx -> dx * dx } + 
-                                               (unit.y - nearestFactory.y).let { dy -> dy * dy }.toDouble()) < 100
+                    // Special - Upgrade card for inheritance factory
+                    CardType.UPGRADE_INHERITANCE -> {
+                        // Find nearest inheritance factory owned by player
+                        val nearestFactory = entities.values
+                            .filter { it.type == EntityType.FACTORY && it.ownerId == sessionId && it.factoryType == FactoryType.INHERITANCE }
+                            .minByOrNull { 
+                                val dx = it.x - cmd.targetX
+                                val dy = it.y - cmd.targetY
+                                dx * dx + dy * dy
                             }
-                            .take(2)
                         
-                        if (nearbyUnits.size >= 2) {
-                            // Remove the sacrificed units
-                            nearbyUnits.forEach { entities.remove(it.id) }
+                        if (nearestFactory != null) {
+                            // Find nearby units to combine (within 100px of the factory)
+                            val nearbyUnits = entities.values
+                                .filter { unit -> 
+                                    unit.type == EntityType.UNIT && 
+                                    unit.ownerId == sessionId &&
+                                    kotlin.math.sqrt((unit.x - nearestFactory.x).let { dx -> dx * dx } + 
+                                                   (unit.y - nearestFactory.y).let { dy -> dy * dy }.toDouble()) < 100
+                                }
+                                .take(2)
                             
-                            // Create upgraded unit with combined stats
-                            val combinedHp = nearbyUnits.sumOf { it.maxHp }
-                            val avgSpeed = nearbyUnits.map { it.speed }.average().toFloat()
-                            
-                            spawnUnitByCard(
-                                sessionId, 
-                                UnitType.INHERITANCE_DRONE, // Upgraded unit type
-                                nearestFactory.x + 20f, 
-                                nearestFactory.y,
-                                UnitStatsData.INHERITANCE_DRONE.copy(
-                                    maxHp = (combinedHp * 1.2).toInt(),
-                                    speed = avgSpeed * 1.1f
+                            if (nearbyUnits.size >= 2) {
+                                // Remove the sacrificed units
+                                nearbyUnits.forEach { entities.remove(it.id) }
+                                
+                                // Create upgraded unit with combined stats
+                                val combinedHp = nearbyUnits.sumOf { it.maxHp }
+                                val avgSpeed = nearbyUnits.map { it.speed }.average().toFloat()
+                                
+                                spawnUnitByCard(
+                                    sessionId, 
+                                    UnitType.INHERITANCE_DRONE, // Upgraded unit type
+                                    nearestFactory.x + 20f, 
+                                    nearestFactory.y,
+                                    UnitStatsData.INHERITANCE_DRONE.copy(
+                                        maxHp = (combinedHp * 1.2).toInt(),
+                                        speed = avgSpeed * 1.1f
+                                    )
                                 )
-                            )
+                            }
                         }
                     }
+                    else -> {} // Unknown non-unit card
                 }
             }
             
-            // Draw new card
-            DeckBuilder.drawCard(player)
+            // Draw new card (factory card is always kept available)
+            DeckBuilder.drawCard(player, card.type.isFactoryCard())
         }
     }
     
@@ -430,11 +419,201 @@ class GameRoom {
         playerStats[ownerId]?.factoriesBuilt = (playerStats[ownerId]?.factoriesBuilt ?: 0) + 1
     }
     
+    /**
+     * Get unit type and stats for a card type.
+     */
+    private fun getUnitTypeAndStats(cardType: CardType): Pair<UnitType, UnitStats>? {
+        return when (cardType) {
+            // Legacy units
+            CardType.SPAWN_SCOUT -> UnitType.SCOUT to UnitStatsData.SCOUT
+            CardType.SPAWN_TANK -> UnitType.TANK to UnitStatsData.TANK
+            CardType.SPAWN_RANGED -> UnitType.RANGED to UnitStatsData.RANGED
+            CardType.SPAWN_HEALER -> UnitType.HEALER to UnitStatsData.HEALER
+            
+            // Basic Processes
+            CardType.SPAWN_ALLOCATOR -> UnitType.ALLOCATOR to UnitStatsData.ALLOCATOR
+            CardType.SPAWN_GARBAGE_COLLECTOR -> UnitType.GARBAGE_COLLECTOR to UnitStatsData.GARBAGE_COLLECTOR
+            CardType.SPAWN_BASIC_PROCESS -> UnitType.BASIC_PROCESS to UnitStatsData.BASIC_PROCESS
+            
+            // OOP Units
+            CardType.SPAWN_INHERITANCE_DRONE -> UnitType.INHERITANCE_DRONE to UnitStatsData.INHERITANCE_DRONE
+            CardType.SPAWN_POLYMORPH_WARRIOR -> UnitType.POLYMORPH_WARRIOR to UnitStatsData.POLYMORPH_WARRIOR
+            CardType.SPAWN_ENCAPSULATION_SHIELD -> UnitType.ENCAPSULATION_SHIELD to UnitStatsData.ENCAPSULATION_SHIELD
+            CardType.SPAWN_ABSTRACTION_AGENT -> UnitType.ABSTRACTION_AGENT to UnitStatsData.ABSTRACTION_AGENT
+            
+            // Reflection & Metaprogramming
+            CardType.SPAWN_REFLECTION_SPY -> UnitType.REFLECTION_SPY to UnitStatsData.REFLECTION_SPY
+            CardType.SPAWN_CODE_INJECTOR -> UnitType.CODE_INJECTOR to UnitStatsData.CODE_INJECTOR
+            CardType.SPAWN_DYNAMIC_DISPATCHER -> UnitType.DYNAMIC_DISPATCHER to UnitStatsData.DYNAMIC_DISPATCHER
+            
+            // Async & Parallelism
+            CardType.SPAWN_COROUTINE_ARCHER -> UnitType.COROUTINE_ARCHER to UnitStatsData.COROUTINE_ARCHER
+            CardType.SPAWN_PROMISE_KNIGHT -> UnitType.PROMISE_KNIGHT to UnitStatsData.PROMISE_KNIGHT
+            CardType.SPAWN_DEADLOCK_TRAP -> UnitType.DEADLOCK_TRAP to UnitStatsData.DEADLOCK_TRAP
+            
+            // Functional Programming
+            CardType.SPAWN_LAMBDA_SNIPER -> UnitType.LAMBDA_SNIPER to UnitStatsData.LAMBDA_SNIPER
+            CardType.SPAWN_RECURSIVE_BOMB -> UnitType.RECURSIVE_BOMB to UnitStatsData.RECURSIVE_BOMB
+            CardType.SPAWN_HIGHER_ORDER_COMMANDER -> UnitType.HIGHER_ORDER_COMMANDER to UnitStatsData.HIGHER_ORDER_COMMANDER
+            
+            // Network & Communication
+            CardType.SPAWN_API_GATEWAY -> UnitType.API_GATEWAY to UnitStatsData.API_GATEWAY
+            CardType.SPAWN_WEBSOCKET_SCOUT -> UnitType.WEBSOCKET_SCOUT to UnitStatsData.WEBSOCKET_SCOUT
+            CardType.SPAWN_RESTFUL_HEALER -> UnitType.RESTFUL_HEALER to UnitStatsData.RESTFUL_HEALER
+            
+            // Storage Units
+            CardType.SPAWN_CACHE_RUNNER -> UnitType.CACHE_RUNNER to UnitStatsData.CACHE_RUNNER
+            CardType.SPAWN_INDEXER -> UnitType.INDEXER to UnitStatsData.INDEXER
+            CardType.SPAWN_TRANSACTION_GUARD -> UnitType.TRANSACTION_GUARD to UnitStatsData.TRANSACTION_GUARD
+            
+            // Memory Management
+            CardType.SPAWN_POINTER -> UnitType.POINTER to UnitStatsData.POINTER
+            CardType.SPAWN_BUFFER -> UnitType.BUFFER to UnitStatsData.BUFFER
+            
+            // Safety & Type
+            CardType.SPAWN_ASSERT -> UnitType.ASSERT to UnitStatsData.ASSERT
+            CardType.SPAWN_STATIC_CAST -> UnitType.STATIC_CAST to UnitStatsData.STATIC_CAST
+            CardType.SPAWN_DYNAMIC_CAST -> UnitType.DYNAMIC_CAST to UnitStatsData.DYNAMIC_CAST
+            
+            // Concurrency
+            CardType.SPAWN_MUTEX_GUARDIAN -> UnitType.MUTEX_GUARDIAN to UnitStatsData.MUTEX_GUARDIAN
+            CardType.SPAWN_SEMAPHORE_CONTROLLER -> UnitType.SEMAPHORE_CONTROLLER to UnitStatsData.SEMAPHORE_CONTROLLER
+            CardType.SPAWN_THREAD_POOL -> UnitType.THREAD_POOL to UnitStatsData.THREAD_POOL
+            
+            // Capture & Resource Units
+            CardType.SPAWN_MEMORY_MINER -> UnitType.MEMORY_MINER to UnitStatsData.MEMORY_MINER
+            CardType.SPAWN_CPU_HARVESTER -> UnitType.CPU_HARVESTER to UnitStatsData.CPU_HARVESTER
+            CardType.SPAWN_RESOURCE_CLONER -> UnitType.RESOURCE_CLONER to UnitStatsData.RESOURCE_CLONER
+            CardType.SPAWN_NODE_DEFENDER -> UnitType.NODE_DEFENDER to UnitStatsData.NODE_DEFENDER
+            
+            else -> null
+        }
+    }
+    
+    /**
+     * Queue a unit for production at the factory with the shortest wait time.
+     * Returns true if successfully queued, false if no factories available.
+     */
+    private fun queueUnitProduction(ownerId: String, unitType: UnitType, stats: UnitStats, targetEntityId: String?): Boolean {
+        // Find all factories owned by this player
+        val playerFactories = entities.values.filter { 
+            it.type == EntityType.FACTORY && it.ownerId == ownerId 
+        }
+        
+        if (playerFactories.isEmpty()) {
+            println("No factories available for player $ownerId")
+            return false
+        }
+        
+        // Calculate wait time for each factory and find the one with shortest queue
+        val factoryWaitTimes = playerFactories.mapNotNull { factory ->
+            val queue = factoryQueues[factory.id] ?: return@mapNotNull null
+            val waitTime = queue.sumOf { it.remainingTime.toDouble() }.toFloat()
+            factory to waitTime
+        }
+        
+        val (bestFactory, _) = factoryWaitTimes.minByOrNull { it.second } ?: return false
+        
+        // Apply factory-type production time modifier
+        val productionTime = when (bestFactory.factoryType) {
+            FactoryType.COMPILER -> stats.productionTime * 1.3f      // Slower but stronger
+            FactoryType.INTERPRETER -> stats.productionTime * 0.7f  // Faster but weaker
+            else -> stats.productionTime
+        }
+        
+        // Find priority target position (enemy base by default, or target entity)
+        val targetPos = if (targetEntityId != null) {
+            val targetEntity = entities[targetEntityId]
+            if (targetEntity != null) {
+                Pair(targetEntity.x, targetEntity.y)
+            } else {
+                // Find enemy base as default target
+                val enemyBase = entities.values.find { 
+                    it.type == EntityType.INSTANCE && it.ownerId != ownerId && it.ownerId != "0"
+                }
+                if (enemyBase != null) Pair(enemyBase.x, enemyBase.y) else Pair(mapWidth / 2, mapHeight / 2)
+            }
+        } else {
+            // Find enemy base as default target
+            val enemyBase = entities.values.find { 
+                it.type == EntityType.INSTANCE && it.ownerId != ownerId && it.ownerId != "0"
+            }
+            if (enemyBase != null) Pair(enemyBase.x, enemyBase.y) else Pair(mapWidth / 2, mapHeight / 2)
+        }
+        
+        // Add to queue
+        val queueItem = ProductionQueueItem(
+            unitType = unitType,
+            remainingTime = productionTime,
+            targetX = targetPos.first,
+            targetY = targetPos.second,
+            targetEntityId = targetEntityId
+        )
+        factoryQueues[bestFactory.id]?.add(queueItem)
+        
+        println("Queued $unitType at factory ${bestFactory.id} (wait: ${productionTime}s)")
+        return true
+    }
+    
+    /**
+     * Process all factory production queues - spawn units when ready.
+     */
+    private fun processFactoryQueues(delta: Float) {
+        factoryQueues.forEach { (factoryId, queue) ->
+            val factory = entities[factoryId] ?: return@forEach
+            if (queue.isEmpty()) return@forEach
+            
+            // Process first item in queue
+            val item = queue.first()
+            item.remainingTime -= delta
+            
+            // Unit ready to spawn!
+            if (item.remainingTime <= 0) {
+                queue.removeAt(0)
+                
+                val stats = UnitStatsData.getStats(item.unitType)
+                
+                // Apply factory-type stat modifiers
+                val modifiedStats = when (factory.factoryType) {
+                    FactoryType.COMPILER -> stats.copy(
+                        maxHp = (stats.maxHp * 1.15f).toInt(),
+                        damage = (stats.damage * 1.1f).toInt()
+                    )
+                    FactoryType.INTERPRETER -> stats.copy(
+                        maxHp = (stats.maxHp * 0.85f).toInt(),
+                        speed = stats.speed * 1.15f
+                    )
+                    else -> stats
+                }
+                
+                // Spawn unit at factory
+                val unit = spawnUnitByCard(
+                    factory.ownerId,
+                    item.unitType,
+                    factory.x + 30f,
+                    factory.y,
+                    modifiedStats
+                )
+                
+                // Set priority target for the unit
+                unit.targetX = item.targetX
+                unit.targetY = item.targetY
+                unit.targetEnemyId = item.targetEntityId
+                unit.abilityData = "priority_target:${item.targetEntityId ?: "none"}"
+                
+                println("Spawned $item.unitType from factory $factoryId")
+            }
+        }
+    }
+    
     private var lastTick = 0L
     private val deadUnitsThisFrame = mutableListOf<GameEntity>()  // For InheritanceDrone
     
     private suspend fun update(delta: Float) {
         deadUnitsThisFrame.clear()
+        
+        // 0. Process factory production queues
+        processFactoryQueues(delta)
         
         // 1. Cooldowns - update every frame
         players.values.forEach { player ->
@@ -459,9 +638,24 @@ class GameRoom {
             entities.values.filter { it.type == EntityType.RESOURCE_NODE && it.ownerId != "0" }.forEach { node ->
                 val owner = players[node.ownerId]
                 if (owner != null) {
+                    var memoryBonus = 1
+                    var cpuBonus = 1
+                    
+                    // Check for RESOURCE_CLONER nearby - doubles node income
+                    val hasCloner = entities.values.any { 
+                        it.type == EntityType.UNIT && 
+                        it.unitType == UnitType.RESOURCE_CLONER && 
+                        it.ownerId == node.ownerId &&
+                        distance(it, node) < 100f
+                    }
+                    if (hasCloner) {
+                        memoryBonus *= 2
+                        cpuBonus *= 2
+                    }
+                    
                     when(node.resourceType) {
-                        ResourceType.MEMORY -> owner.memory += 1
-                        ResourceType.CPU -> owner.cpu += 1
+                        ResourceType.MEMORY -> owner.memory += memoryBonus
+                        ResourceType.CPU -> owner.cpu += cpuBonus
                         null -> {}
                     }
                 }
@@ -472,6 +666,33 @@ class GameRoom {
                 val owner = players[allocator.ownerId]
                 if (owner != null) {
                     owner.memory += 2  // Allocators generate memory
+                }
+            }
+            
+            // MEMORY_MINER Passive: Generate Memory from nearby nodes
+            entities.values.filter { it.type == EntityType.UNIT && it.unitType == UnitType.MEMORY_MINER }.forEach { miner ->
+                val owner = players[miner.ownerId]
+                if (owner != null) {
+                    // Bonus memory for each captured node nearby
+                    val nearbyNodes = entities.values.count { 
+                        it.type == EntityType.RESOURCE_NODE && 
+                        it.ownerId == miner.ownerId && 
+                        distance(it, miner) < 150f 
+                    }
+                    owner.memory += nearbyNodes * 2
+                }
+            }
+            
+            // CPU_HARVESTER Passive: Generate CPU from nearby nodes  
+            entities.values.filter { it.type == EntityType.UNIT && it.unitType == UnitType.CPU_HARVESTER }.forEach { harvester ->
+                val owner = players[harvester.ownerId]
+                if (owner != null) {
+                    val nearbyNodes = entities.values.count { 
+                        it.type == EntityType.RESOURCE_NODE && 
+                        it.ownerId == harvester.ownerId && 
+                        distance(it, harvester) < 150f 
+                    }
+                    owner.cpu += nearbyNodes * 2
                 }
             }
         }
@@ -527,6 +748,39 @@ class GameRoom {
     private suspend fun updateUnitAI(unit: GameEntity, delta: Float, currentTime: Long) {
         val stats = unit.unitType?.let { UnitStatsData.getStats(it) } ?: return
         
+        // Special behavior for NODE_DEFENDER: stay at captured nodes
+        if (unit.unitType == UnitType.NODE_DEFENDER) {
+            val nearbyOwnedNode = entities.values.find { 
+                it.type == EntityType.RESOURCE_NODE && 
+                it.ownerId == unit.ownerId && 
+                distance(unit, it) < 150f 
+            }
+            
+            if (nearbyOwnedNode != null) {
+                // Guard the node - attack any enemies that come close
+                val nearbyEnemy = entities.values.find { 
+                    it.ownerId != unit.ownerId && 
+                    it.ownerId != "0" &&
+                    it.type == EntityType.UNIT && 
+                    distance(unit, it) <= stats.attackRange 
+                }
+                
+                if (nearbyEnemy != null) {
+                    unit.aiState = AIState.ATTACKING
+                    val attackCooldown = (1000f / stats.attackSpeed).toLong()
+                    if (currentTime - unit.lastAttackTime >= attackCooldown) {
+                        performAttack(unit, nearbyEnemy, stats, currentTime)
+                        unit.lastAttackTime = currentTime
+                    }
+                    unit.attackingTargetId = nearbyEnemy.id
+                } else {
+                    unit.aiState = AIState.IDLE
+                    unit.attackingTargetId = null
+                }
+                return
+            }
+        }
+        
         // 1. Find Target (if no current target or target is dead)
         if (unit.targetEnemyId == null || entities[unit.targetEnemyId!!] == null) {
             unit.targetEnemyId = findNearestEnemy(unit)
@@ -536,12 +790,27 @@ class GameRoom {
         val target = unit.targetEnemyId?.let { entities[it] }
         
         if (target == null) {
-            // No target - idle or find resource nodes for ALLOCATOR/CACHE_RUNNER
-            if (unit.unitType == UnitType.ALLOCATOR || unit.unitType == UnitType.CACHE_RUNNER) {
+            // No target - idle or find resource nodes for capture units
+            if (unit.unitType in listOf(
+                UnitType.ALLOCATOR, 
+                UnitType.CACHE_RUNNER, 
+                UnitType.MEMORY_MINER, 
+                UnitType.CPU_HARVESTER
+            )) {
                 val nearestNode = findNearestResourceNode(unit)
                 if (nearestNode != null && distance(unit, nearestNode) > 25f) {
                     unit.targetX = nearestNode.x
                     unit.targetY = nearestNode.y
+                    
+                    // Actually move toward node
+                    val dx = nearestNode.x - unit.x
+                    val dy = nearestNode.y - unit.y
+                    val moveAmount = unit.speed * delta
+                    val dist = Math.sqrt((dx*dx + dy*dy).toDouble()).toFloat()
+                    if (dist > 0) {
+                        unit.x += (dx / dist) * moveAmount
+                        unit.y += (dy / dist) * moveAmount
+                    }
                 }
             }
             unit.aiState = AIState.IDLE

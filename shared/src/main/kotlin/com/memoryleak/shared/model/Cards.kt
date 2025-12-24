@@ -66,6 +66,12 @@ enum class CardType {
     SPAWN_SEMAPHORE_CONTROLLER,
     SPAWN_THREAD_POOL,
     
+    // Capture & Resource specialized units
+    SPAWN_MEMORY_MINER,         // Fast capture + memory bonus
+    SPAWN_CPU_HARVESTER,        // Fast capture + CPU bonus
+    SPAWN_RESOURCE_CLONER,      // Duplicates resource income from nodes
+    SPAWN_NODE_DEFENDER,        // Guards captured nodes
+    
     // Inheritance card (for upgrade factories)
     UPGRADE_INHERITANCE;
     
@@ -138,7 +144,13 @@ enum class UnitType {
     THREAD_POOL,        // Spawns worker units
     
     // Worker unit (spawned by Thread Pool)
-    WORKER_THREAD
+    WORKER_THREAD,
+    
+    // Capture & Resource Units
+    MEMORY_MINER,       // Fast capture, generates bonus memory from nodes
+    CPU_HARVESTER,      // Fast capture, generates bonus CPU from nodes
+    RESOURCE_CLONER,    // Duplicates resource income from captured nodes
+    NODE_DEFENDER       // Stationary defender that guards captured nodes
 }
 
 @Serializable
@@ -524,6 +536,47 @@ object UnitStatsData {
         productionTime = 0f  // Spawned by Thread Pool
     )
     
+    // === CAPTURE & RESOURCE UNITS ===
+    val MEMORY_MINER = UnitStats(
+        type = UnitType.MEMORY_MINER,
+        maxHp = 30,
+        speed = 140f,
+        damage = 3,
+        attackRange = 30f,
+        attackSpeed = 1.0f,
+        productionTime = 2f
+    )
+    
+    val CPU_HARVESTER = UnitStats(
+        type = UnitType.CPU_HARVESTER,
+        maxHp = 35,
+        speed = 130f,
+        damage = 4,
+        attackRange = 35f,
+        attackSpeed = 0.9f,
+        productionTime = 2f
+    )
+    
+    val RESOURCE_CLONER = UnitStats(
+        type = UnitType.RESOURCE_CLONER,
+        maxHp = 45,
+        speed = 80f,
+        damage = 2,
+        attackRange = 40f,
+        attackSpeed = 0.5f,
+        productionTime = 3f
+    )
+    
+    val NODE_DEFENDER = UnitStats(
+        type = UnitType.NODE_DEFENDER,
+        maxHp = 80,
+        speed = 20f,  // Very slow - stationary defender
+        damage = 12,
+        attackRange = 100f,
+        attackSpeed = 1.2f,
+        productionTime = 4f
+    )
+    
     // Helper function to get stats by type
     fun getStats(type: UnitType): UnitStats {
         return when (type) {
@@ -562,6 +615,10 @@ object UnitStatsData {
             UnitType.SEMAPHORE_CONTROLLER -> SEMAPHORE_CONTROLLER
             UnitType.THREAD_POOL -> THREAD_POOL
             UnitType.WORKER_THREAD -> WORKER_THREAD
+            UnitType.MEMORY_MINER -> MEMORY_MINER
+            UnitType.CPU_HARVESTER -> CPU_HARVESTER
+            UnitType.RESOURCE_CLONER -> RESOURCE_CLONER
+            UnitType.NODE_DEFENDER -> NODE_DEFENDER
         }
     }
     
@@ -704,6 +761,20 @@ object UnitStatsData {
             )
             CardType.SPAWN_THREAD_POOL -> com.memoryleak.shared.network.CardDefinition(
                 cardType, "Thread Pool", "Spawns workers", 90, 70, "Concurrency", THREAD_POOL.productionTime
+            )
+            
+            // Capture & Resource units
+            CardType.SPAWN_MEMORY_MINER -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Mem Miner", "Fast capture, +memory", 35, 25, "Capture", MEMORY_MINER.productionTime
+            )
+            CardType.SPAWN_CPU_HARVESTER -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "CPU Harvest", "Fast capture, +CPU", 30, 35, "Capture", CPU_HARVESTER.productionTime
+            )
+            CardType.SPAWN_RESOURCE_CLONER -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Cloner", "Doubles node income", 50, 50, "Capture", RESOURCE_CLONER.productionTime
+            )
+            CardType.SPAWN_NODE_DEFENDER -> com.memoryleak.shared.network.CardDefinition(
+                cardType, "Node Def", "Guards captured nodes", 60, 45, "Capture", NODE_DEFENDER.productionTime
             )
             
             CardType.UPGRADE_INHERITANCE -> com.memoryleak.shared.network.CardDefinition(
