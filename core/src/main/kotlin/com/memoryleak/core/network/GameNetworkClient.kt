@@ -97,8 +97,10 @@ class GameNetworkClient(private val app: MemoryLeakApp, private val host: String
                 
                 is MatchFoundPacket -> {
                     isInMatchmaking = false
-                    // Note: Don't overwrite myId - keep the UUID from AuthResponsePacket
-                    // myId is already set correctly from login
+                    // IMPORTANT: Don't overwrite myId here!
+                    // myId is set by AuthResponsePacket with the player's UUID from the server.
+                    // This UUID is used to identify the player's entities (ownerId matches myId).
+                    // The isPlayer1 field in the packet indicates position (left/right) only.
                     onMatchFound?.invoke(packet)
                 }
                 

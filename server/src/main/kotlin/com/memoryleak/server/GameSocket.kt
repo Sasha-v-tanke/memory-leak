@@ -352,13 +352,21 @@ private suspend fun handleSaveDeck(sessionId: String, packet: SaveDeckPacket, se
         return
     }
     
-    // Save deck to database
+    // Save deck to database and check result
     if (DatabaseConfig.isConnected()) {
-        GameRepository.saveDeck(sessionId, packet.deckName, packet.cardTypes)
+        val success = GameRepository.saveDeck(sessionId, packet.deckName, packet.cardTypes)
+        if (!success) {
+            sendPacket(session.socket, ErrorPacket(4001, "Failed to save deck"))
+            return
+        }
+    } else {
+        sendPacket(session.socket, ErrorPacket(4002, "Database not available"))
+        return
     }
     
+    // Send updated deck list
     sendPacket(session.socket, DecksResponsePacket(
-        decks = if (DatabaseConfig.isConnected()) GameRepository.getPlayerDecks(sessionId) else emptyList()
+        decks = GameRepository.getPlayerDecks(sessionId)
     ))
     println("Player $sessionId saved deck: ${packet.deckName}")
 }

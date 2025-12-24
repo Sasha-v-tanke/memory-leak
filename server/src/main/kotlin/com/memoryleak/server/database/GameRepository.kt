@@ -312,12 +312,42 @@ data class AuthResult(
 object AuthRepository {
     
     /**
-     * Hash a password using SHA-256.
+     * Hash a password using SHA-256 with a salt.
+     * Salt is prepended to the hash result: "salt:hash"
      */
-    private fun hashPassword(password: String): String {
+    private fun hashPassword(password: String, salt: String = generateSalt()): String {
+        val saltedPassword = "$salt$password"
         val bytes = java.security.MessageDigest.getInstance("SHA-256")
-            .digest(password.toByteArray())
+            .digest(saltedPassword.toByteArray())
+        val hash = bytes.joinToString("") { "%02x".format(it) }
+        return "$salt:$hash"
+    }
+    
+    /**
+     * Generate a random salt for password hashing.
+     */
+    private fun generateSalt(): String {
+        val bytes = ByteArray(16)
+        java.security.SecureRandom().nextBytes(bytes)
         return bytes.joinToString("") { "%02x".format(it) }
+    }
+    
+    /**
+     * Verify a password against a stored hash (salt:hash format).
+     */
+    private fun verifyPassword(password: String, storedHash: String): Boolean {
+        val parts = storedHash.split(":")
+        return if (parts.size == 2) {
+            val salt = parts[0]
+            val expectedHash = hashPassword(password, salt)
+            expectedHash == storedHash
+        } else {
+            // Legacy hash without salt - compare directly
+            val bytes = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(password.toByteArray())
+            val hash = bytes.joinToString("") { "%02x".format(it) }
+            hash == storedHash
+        }
     }
     
     /**
@@ -351,7 +381,7 @@ object AuthRepository {
                     return@transaction AuthResult(false, message = "Username already taken")
                 }
                 
-                // Create new account
+                // Create new account with salted password hash
                 val id = PlayerAccountsTable.insertAndGetId {
                     it[PlayerAccountsTable.username] = username
                     it[PlayerAccountsTable.nickname] = nickname
@@ -392,7 +422,7 @@ object AuthRepository {
                 }
                 
                 val storedHash = account[PlayerAccountsTable.passwordHash]
-                if (hashPassword(password) != storedHash) {
+                if (!verifyPassword(password, storedHash)) {
                     return@transaction AuthResult(false, message = "Invalid password")
                 }
                 

@@ -388,7 +388,9 @@ class DeckSelectionScreen(private val app: MemoryLeakApp) : Screen {
     private fun saveDeckToServer() {
         // Save the current deck to the server
         if (selectedCards.isNotEmpty()) {
-            val deckName = "Deck ${savedDecks.size + 1}"
+            // Use timestamp-based naming to avoid conflicts
+            val timestamp = java.text.SimpleDateFormat("MMdd_HHmm").format(java.util.Date())
+            val deckName = "Deck_$timestamp"
             app.networkClient.saveDeck(deckName, selectedCards.map { it.name })
             // Also update local selection
             app.selectedDeck = selectedCards.map { it.name }
