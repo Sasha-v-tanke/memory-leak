@@ -1,5 +1,9 @@
 package com.memoryleak.server
 
+import com.memoryleak.server.database.AuthRepository
+import com.memoryleak.server.database.DatabaseConfig
+import com.memoryleak.server.database.GameRepository
+import com.memoryleak.server.database.PlayerStatsTable
 import com.memoryleak.server.game.GameRoom
 import com.memoryleak.server.game.MatchmakingManager
 import com.memoryleak.shared.network.*
@@ -10,6 +14,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.coroutines.channels.consumeEach
+import org.jetbrains.exposed.sql.select
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -73,12 +78,17 @@ private suspend fun handlePacket(sessionId: String, packet: Packet, session: Pla
         
         // Game commands
         is CommandPacket -> handleCommand(sessionId, packet, session)
+        is LeaveGamePacket -> handleLeaveGame(sessionId, packet, session)
         
         // Stats
         is GetStatsPacket -> handleGetStats(sessionId, session)
         
         // Cards
         is GetAllCardsPacket -> handleGetAllCards(sessionId, session)
+        
+        // Deck management
+        is SaveDeckPacket -> handleSaveDeck(sessionId, packet, session)
+        is LoadDecksPacket -> handleLoadDecks(sessionId, session)
         
         else -> {
             println("Unhandled packet type: ${packet::class.simpleName}")
@@ -87,7 +97,6 @@ private suspend fun handlePacket(sessionId: String, packet: Packet, session: Pla
 }
 
 private suspend fun handleLogin(sessionId: String, packet: LoginPacket, session: PlayerSession) {
-    // Simple login - just use username (no password check for MVP)
     if (packet.username.length < 3) {
         sendPacket(session.socket, AuthResponsePacket(
             success = false,
@@ -96,33 +105,50 @@ private suspend fun handleLogin(sessionId: String, packet: LoginPacket, session:
         return
     }
     
-    session.username = packet.username
-    session.isAuthenticated = true
-    
-    // Create default stats
-    val stats = PlayerStatsData(
-        totalGames = 0,
-        wins = 0,
-        losses = 0,
-        totalUnitsCreated = 0,
-        totalUnitsKilled = 0,
-        totalFactoriesBuilt = 0,
-        totalCardsPlayed = 0,
-        totalPlayTimeSeconds = 0
-    )
-    
-    sendPacket(session.socket, AuthResponsePacket(
-        success = true,
-        playerId = sessionId,
-        message = "Login successful",
-        playerStats = stats
-    ))
-    
-    println("Player logged in: ${packet.username} ($sessionId)")
+    // Use database authentication if available
+    if (DatabaseConfig.isConnected()) {
+        val authResult = AuthRepository.login(packet.username, packet.password)
+        if (!authResult.success) {
+            sendPacket(session.socket, AuthResponsePacket(
+                success = false,
+                message = authResult.message
+            ))
+            return
+        }
+        
+        session.username = authResult.nickname ?: packet.username
+        session.isAuthenticated = true
+        
+        // Get player stats from database
+        val stats = getPlayerStatsFromDb(authResult.playerId!!)
+        
+        sendPacket(session.socket, AuthResponsePacket(
+            success = true,
+            playerId = authResult.playerId,
+            message = "Login successful",
+            playerStats = stats
+        ))
+        
+        println("Player logged in: ${session.username} (${authResult.playerId})")
+    } else {
+        // Fallback: Simple login without DB (for development)
+        session.username = packet.username
+        session.isAuthenticated = true
+        
+        val stats = PlayerStatsData()
+        
+        sendPacket(session.socket, AuthResponsePacket(
+            success = true,
+            playerId = sessionId,
+            message = "Login successful (no database)",
+            playerStats = stats
+        ))
+        
+        println("Player logged in (no DB): ${packet.username} ($sessionId)")
+    }
 }
 
 private suspend fun handleRegister(sessionId: String, packet: RegisterPacket, session: PlayerSession) {
-    // Simple registration - same as login for MVP
     if (packet.username.length < 3) {
         sendPacket(session.socket, AuthResponsePacket(
             success = false,
@@ -131,19 +157,87 @@ private suspend fun handleRegister(sessionId: String, packet: RegisterPacket, se
         return
     }
     
-    session.username = packet.username
-    session.isAuthenticated = true
+    // Use database registration if available
+    if (DatabaseConfig.isConnected()) {
+        if (packet.password.length < 4) {
+            sendPacket(session.socket, AuthResponsePacket(
+                success = false,
+                message = "Password must be at least 4 characters"
+            ))
+            return
+        }
+        
+        // Use username as nickname if not provided separately
+        val nickname = packet.username
+        val authResult = AuthRepository.register(packet.username, packet.password, nickname)
+        
+        if (!authResult.success) {
+            sendPacket(session.socket, AuthResponsePacket(
+                success = false,
+                message = authResult.message
+            ))
+            return
+        }
+        
+        session.username = authResult.nickname ?: packet.username
+        session.isAuthenticated = true
+        
+        val stats = PlayerStatsData()
+        
+        sendPacket(session.socket, AuthResponsePacket(
+            success = true,
+            playerId = authResult.playerId,
+            message = "Registration successful",
+            playerStats = stats
+        ))
+        
+        println("Player registered: ${session.username} (${authResult.playerId})")
+    } else {
+        // Fallback: Simple registration without DB (for development)
+        session.username = packet.username
+        session.isAuthenticated = true
+        
+        val stats = PlayerStatsData()
+        
+        sendPacket(session.socket, AuthResponsePacket(
+            success = true,
+            playerId = sessionId,
+            message = "Registration successful (no database)",
+            playerStats = stats
+        ))
+        
+        println("Player registered (no DB): ${packet.username} ($sessionId)")
+    }
+}
+
+private fun getPlayerStatsFromDb(playerId: String): PlayerStatsData {
+    if (!DatabaseConfig.isConnected()) return PlayerStatsData()
     
-    val stats = PlayerStatsData()
-    
-    sendPacket(session.socket, AuthResponsePacket(
-        success = true,
-        playerId = sessionId,
-        message = "Registration successful",
-        playerStats = stats
-    ))
-    
-    println("Player registered: ${packet.username} ($sessionId)")
+    return try {
+        org.jetbrains.exposed.sql.transactions.transaction {
+            val row = PlayerStatsTable
+                .select { PlayerStatsTable.playerId eq playerId }
+                .singleOrNull()
+            
+            if (row != null) {
+                PlayerStatsData(
+                    totalGames = row[PlayerStatsTable.totalGames],
+                    wins = row[PlayerStatsTable.wins],
+                    losses = row[PlayerStatsTable.losses],
+                    totalUnitsCreated = row[PlayerStatsTable.totalUnitsCreated],
+                    totalUnitsKilled = row[PlayerStatsTable.totalUnitsKilled],
+                    totalFactoriesBuilt = row[PlayerStatsTable.totalFactoriesBuilt],
+                    totalCardsPlayed = row[PlayerStatsTable.totalCardsPlayed],
+                    totalPlayTimeSeconds = row[PlayerStatsTable.totalPlayTimeSeconds]
+                )
+            } else {
+                PlayerStatsData()
+            }
+        }
+    } catch (e: Exception) {
+        println("[GameSocket] Failed to get player stats: ${e.message}")
+        PlayerStatsData()
+    }
 }
 
 private suspend fun handleFindMatch(sessionId: String, packet: FindMatchPacket, session: PlayerSession) {
@@ -226,6 +320,57 @@ private suspend fun handleGetAllCards(sessionId: String, session: PlayerSession)
         com.memoryleak.shared.model.UnitStatsData.getCardDefinition(cardType)
     }
     sendPacket(session.socket, AllCardsResponsePacket(cards))
+}
+
+private suspend fun handleLeaveGame(sessionId: String, packet: LeaveGamePacket, session: PlayerSession) {
+    val gameRoom = session.currentGameRoom
+    
+    if (gameRoom == null) {
+        // Not in a game, just confirm
+        sendPacket(session.socket, GameLeftPacket(success = true, message = "Not in a game"))
+        return
+    }
+    
+    if (packet.surrender) {
+        // Player surrendered - notify opponent they won
+        gameRoom.handleSurrender(sessionId)
+    }
+    
+    // Remove player from game room
+    gameRoom.removePlayer(sessionId)
+    
+    // Clear the game room reference
+    session.currentGameRoom = null
+    
+    sendPacket(session.socket, GameLeftPacket(success = true, message = if (packet.surrender) "You surrendered" else "Left game"))
+    println("Player $sessionId left game (surrender: ${packet.surrender})")
+}
+
+private suspend fun handleSaveDeck(sessionId: String, packet: SaveDeckPacket, session: PlayerSession) {
+    if (!session.isAuthenticated) {
+        sendPacket(session.socket, ErrorPacket(1003, "Not authenticated"))
+        return
+    }
+    
+    // Save deck to database
+    if (DatabaseConfig.isConnected()) {
+        GameRepository.saveDeck(sessionId, packet.deckName, packet.cardTypes)
+    }
+    
+    sendPacket(session.socket, DecksResponsePacket(
+        decks = if (DatabaseConfig.isConnected()) GameRepository.getPlayerDecks(sessionId) else emptyList()
+    ))
+    println("Player $sessionId saved deck: ${packet.deckName}")
+}
+
+private suspend fun handleLoadDecks(sessionId: String, session: PlayerSession) {
+    if (!session.isAuthenticated) {
+        sendPacket(session.socket, ErrorPacket(1003, "Not authenticated"))
+        return
+    }
+    
+    val decks = if (DatabaseConfig.isConnected()) GameRepository.getPlayerDecks(sessionId) else emptyList()
+    sendPacket(session.socket, DecksResponsePacket(decks = decks))
 }
 
 private suspend fun sendPacket(socket: WebSocketSession, packet: Packet) {

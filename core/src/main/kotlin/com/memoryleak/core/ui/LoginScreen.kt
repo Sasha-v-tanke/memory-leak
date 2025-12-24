@@ -24,6 +24,8 @@ class LoginScreen(private val app: MemoryLeakApp) : Screen {
     private val uiMatrix = Matrix4()
     
     private var username = ""
+    private var password = ""
+    private var activeField = 0  // 0 = username, 1 = password
     private var statusMessage = ""
     private var statusColor = Color.WHITE
     private var isConnecting = false
@@ -94,15 +96,22 @@ class LoginScreen(private val app: MemoryLeakApp) : Screen {
         shapeRenderer.color = Color(0.15f, 0.15f, 0.2f, 1f)
         shapeRenderer.rect(0f, 0f, screenWidth, screenHeight)
         
-        // Input box background
+        // Username input box background
         val inputX = (screenWidth - inputBoxWidth) / 2
-        val inputY = screenHeight / 2
-        shapeRenderer.color = Color(0.2f, 0.2f, 0.25f, 1f)
-        shapeRenderer.rect(inputX, inputY, inputBoxWidth, inputBoxHeight)
+        val usernameInputY = screenHeight / 2 + 30
+        val passwordInputY = screenHeight / 2 - 30
+        
+        // Username field
+        shapeRenderer.color = if (activeField == 0) Color(0.25f, 0.25f, 0.35f, 1f) else Color(0.2f, 0.2f, 0.25f, 1f)
+        shapeRenderer.rect(inputX, usernameInputY, inputBoxWidth, inputBoxHeight)
+        
+        // Password field
+        shapeRenderer.color = if (activeField == 1) Color(0.25f, 0.25f, 0.35f, 1f) else Color(0.2f, 0.2f, 0.25f, 1f)
+        shapeRenderer.rect(inputX, passwordInputY, inputBoxWidth, inputBoxHeight)
         
         // Login button
         val loginX = (screenWidth - buttonWidth * 2 - 20) / 2
-        val buttonY = inputY - 70
+        val buttonY = passwordInputY - 70
         val hoverLogin = isMouseOver(loginX, buttonY, buttonWidth, buttonHeight)
         shapeRenderer.color = if (hoverLogin) Color(0.3f, 0.6f, 0.3f, 1f) else Color(0.2f, 0.5f, 0.2f, 1f)
         shapeRenderer.rect(loginX, buttonY, buttonWidth, buttonHeight)
@@ -117,8 +126,11 @@ class LoginScreen(private val app: MemoryLeakApp) : Screen {
         
         // Draw borders
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
+        shapeRenderer.color = if (activeField == 0) Color.CYAN else Color.GRAY
+        shapeRenderer.rect(inputX, usernameInputY, inputBoxWidth, inputBoxHeight)
+        shapeRenderer.color = if (activeField == 1) Color.CYAN else Color.GRAY
+        shapeRenderer.rect(inputX, passwordInputY, inputBoxWidth, inputBoxHeight)
         shapeRenderer.color = Color.GRAY
-        shapeRenderer.rect(inputX, inputY, inputBoxWidth, inputBoxHeight)
         shapeRenderer.rect(loginX, buttonY, buttonWidth, buttonHeight)
         shapeRenderer.rect(registerX, buttonY, buttonWidth, buttonHeight)
         shapeRenderer.end()
@@ -139,12 +151,23 @@ class LoginScreen(private val app: MemoryLeakApp) : Screen {
         
         // Username label
         font.color = Color.WHITE
-        font.draw(batch, "Username:", inputX, inputY + inputBoxHeight + 25)
+        font.draw(batch, "Username:", inputX, usernameInputY + inputBoxHeight + 25)
         
         // Username text
         font.color = Color.WHITE
-        val displayText = if (username.isEmpty()) "_" else username + (if ((System.currentTimeMillis() / 500) % 2 == 0L) "_" else "")
-        font.draw(batch, displayText, inputX + 10, inputY + inputBoxHeight - 10)
+        val usernameCursor = if (activeField == 0 && (System.currentTimeMillis() / 500) % 2 == 0L) "_" else ""
+        val usernameDisplay = if (username.isEmpty() && activeField == 0) "_" else username + usernameCursor
+        font.draw(batch, usernameDisplay, inputX + 10, usernameInputY + inputBoxHeight - 10)
+        
+        // Password label
+        font.color = Color.WHITE
+        font.draw(batch, "Password:", inputX, passwordInputY + inputBoxHeight + 25)
+        
+        // Password text (masked)
+        font.color = Color.WHITE
+        val passwordCursor = if (activeField == 1 && (System.currentTimeMillis() / 500) % 2 == 0L) "_" else ""
+        val passwordDisplay = if (password.isEmpty() && activeField == 1) "_" else "*".repeat(password.length) + passwordCursor
+        font.draw(batch, passwordDisplay, inputX + 10, passwordInputY + inputBoxHeight - 10)
         
         // Button labels
         font.color = Color.WHITE
@@ -162,7 +185,7 @@ class LoginScreen(private val app: MemoryLeakApp) : Screen {
         
         // Instructions
         font.color = Color.DARK_GRAY
-        font.draw(batch, "Type your username and click Login or Register", (screenWidth - 350) / 2, 80f)
+        font.draw(batch, "TAB to switch fields | Enter username and password", (screenWidth - 380) / 2, 80f)
         
         batch.end()
     }
@@ -172,24 +195,41 @@ class LoginScreen(private val app: MemoryLeakApp) : Screen {
         for (i in 0 until 256) {
             if (Gdx.input.isKeyJustPressed(i)) {
                 when (i) {
+                    com.badlogic.gdx.Input.Keys.TAB -> {
+                        // Switch between fields
+                        activeField = (activeField + 1) % 2
+                    }
                     com.badlogic.gdx.Input.Keys.BACKSPACE -> {
-                        if (username.isNotEmpty()) {
+                        if (activeField == 0 && username.isNotEmpty()) {
                             username = username.dropLast(1)
+                        } else if (activeField == 1 && password.isNotEmpty()) {
+                            password = password.dropLast(1)
                         }
                     }
                     com.badlogic.gdx.Input.Keys.ENTER -> {
-                        tryLogin()
+                        if (activeField == 0) {
+                            activeField = 1  // Move to password field
+                        } else {
+                            tryLogin()
+                        }
                     }
                     in com.badlogic.gdx.Input.Keys.A..com.badlogic.gdx.Input.Keys.Z -> {
-                        if (username.length < 20) {
-                            val char = ('A' + (i - com.badlogic.gdx.Input.Keys.A))
-                            username += if (Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.SHIFT_LEFT) ||
-                                Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.SHIFT_RIGHT)) char else char.lowercaseChar()
+                        val char = ('A' + (i - com.badlogic.gdx.Input.Keys.A))
+                        val finalChar = if (Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.SHIFT_LEFT) ||
+                            Gdx.input.isKeyPressed(com.badlogic.gdx.Input.Keys.SHIFT_RIGHT)) char else char.lowercaseChar()
+                        
+                        if (activeField == 0 && username.length < 20) {
+                            username += finalChar
+                        } else if (activeField == 1 && password.length < 32) {
+                            password += finalChar
                         }
                     }
                     in com.badlogic.gdx.Input.Keys.NUM_0..com.badlogic.gdx.Input.Keys.NUM_9 -> {
-                        if (username.length < 20) {
-                            username += ('0' + (i - com.badlogic.gdx.Input.Keys.NUM_0))
+                        val char = '0' + (i - com.badlogic.gdx.Input.Keys.NUM_0)
+                        if (activeField == 0 && username.length < 20) {
+                            username += char
+                        } else if (activeField == 1 && password.length < 32) {
+                            password += char
                         }
                     }
                 }
@@ -198,14 +238,19 @@ class LoginScreen(private val app: MemoryLeakApp) : Screen {
         
         // Handle mouse click
         if (Gdx.input.justTouched()) {
-            val mouseX = Gdx.input.x * (screenWidth / Gdx.graphics.width)
-            val mouseY = (Gdx.graphics.height - Gdx.input.y) * (screenHeight / Gdx.graphics.height)
-            
+            val inputX = (screenWidth - inputBoxWidth) / 2
+            val usernameInputY = screenHeight / 2 + 30
+            val passwordInputY = screenHeight / 2 - 30
             val loginX = (screenWidth - buttonWidth * 2 - 20) / 2
-            val buttonY = screenHeight / 2 - 70
+            val buttonY = passwordInputY - 70
             val registerX = loginX + buttonWidth + 20
             
-            if (isMouseOver(loginX, buttonY, buttonWidth, buttonHeight)) {
+            // Check input field clicks
+            if (isMouseOver(inputX, usernameInputY, inputBoxWidth, inputBoxHeight)) {
+                activeField = 0
+            } else if (isMouseOver(inputX, passwordInputY, inputBoxWidth, inputBoxHeight)) {
+                activeField = 1
+            } else if (isMouseOver(loginX, buttonY, buttonWidth, buttonHeight)) {
                 tryLogin()
             } else if (isMouseOver(registerX, buttonY, buttonWidth, buttonHeight)) {
                 tryRegister()
@@ -235,12 +280,18 @@ class LoginScreen(private val app: MemoryLeakApp) : Screen {
         isConnecting = true
         statusMessage = "Logging in..."
         statusColor = Color.YELLOW
-        app.networkClient.login(username)
+        app.networkClient.login(username, password)
     }
     
     private fun tryRegister() {
         if (username.length < 3) {
             statusMessage = "Username must be at least 3 characters"
+            statusColor = Color.RED
+            return
+        }
+        
+        if (password.length < 4) {
+            statusMessage = "Password must be at least 4 characters"
             statusColor = Color.RED
             return
         }
@@ -254,7 +305,7 @@ class LoginScreen(private val app: MemoryLeakApp) : Screen {
         isConnecting = true
         statusMessage = "Registering..."
         statusColor = Color.YELLOW
-        app.networkClient.register(username)
+        app.networkClient.register(username, password)
     }
     
     override fun resize(width: Int, height: Int) {}

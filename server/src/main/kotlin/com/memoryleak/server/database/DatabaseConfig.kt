@@ -64,6 +64,8 @@ object DatabaseConfig {
             // Create tables
             transaction {
                 SchemaUtils.create(
+                    PlayerAccountsTable,
+                    PlayerDecksTable,
                     GameSessionsTable,
                     MatchResultsTable,
                     PlayerStatsTable

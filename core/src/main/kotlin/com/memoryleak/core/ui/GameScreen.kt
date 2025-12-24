@@ -37,6 +37,9 @@ class GameScreen(private val app: MemoryLeakApp) : Screen {
     private var isSelectingTarget: Boolean = false
     private var pendingCardType: CardType? = null
     
+    // Surrender dialog state
+    private var showSurrenderDialog: Boolean = false
+    
     // Colors for player identification
     private val myColor = Color(0.2f, 0.8f, 0.2f, 1f)  // Green
     private val enemyColor = Color(0.8f, 0.2f, 0.2f, 1f)  // Red
@@ -76,6 +79,17 @@ class GameScreen(private val app: MemoryLeakApp) : Screen {
         Gdx.input.inputProcessor = object : InputAdapter() {
             override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
                 val network = app.networkClient
+                
+                // Handle surrender dialog clicks first
+                if (showSurrenderDialog) {
+                    handleSurrenderDialogClick()
+                    return true
+                }
+                
+                // Check surrender button
+                if (checkSurrenderButtonClick()) {
+                    return true
+                }
                 
                 // Check if clicking on cards first (screen space)
                 val myPlayer = network.players[network.myId]
@@ -177,10 +191,14 @@ class GameScreen(private val app: MemoryLeakApp) : Screen {
             
             override fun keyUp(keycode: Int): Boolean {
                 if (keycode == Input.Keys.ESCAPE) {
-                    selectedCardId = null
-                    isPlacingCard = false
-                    isSelectingTarget = false
-                    pendingCardType = null
+                    if (showSurrenderDialog) {
+                        showSurrenderDialog = false
+                    } else {
+                        selectedCardId = null
+                        isPlacingCard = false
+                        isSelectingTarget = false
+                        pendingCardType = null
+                    }
                 }
                 return true
             }
@@ -470,6 +488,159 @@ class GameScreen(private val app: MemoryLeakApp) : Screen {
         font.draw(batch, "Click card -> Click map to deploy | ESC=Cancel | WASD=Camera", 20f, 110f)
         
         batch.end()
+        
+        // Draw surrender button
+        drawSurrenderButton()
+        
+        // Draw surrender confirmation dialog
+        if (showSurrenderDialog) {
+            drawSurrenderDialog()
+        }
+    }
+    
+    private fun drawSurrenderButton() {
+        val buttonX = 700f
+        val buttonY = 560f
+        val buttonWidth = 90f
+        val buttonHeight = 30f
+        
+        Gdx.gl.glEnable(GL20.GL_BLEND)
+        shapeRenderer.projectionMatrix = uiMatrix
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled)
+        
+        val mouseX = Gdx.input.x * (800f / Gdx.graphics.width.toFloat())
+        val mouseY = (Gdx.graphics.height - Gdx.input.y) * (600f / Gdx.graphics.height.toFloat())
+        val isHovered = mouseX >= buttonX && mouseX <= buttonX + buttonWidth &&
+                        mouseY >= buttonY && mouseY <= buttonY + buttonHeight
+        
+        shapeRenderer.color = if (isHovered) Color(0.6f, 0.2f, 0.2f, 0.9f) else Color(0.4f, 0.15f, 0.15f, 0.9f)
+        shapeRenderer.rect(buttonX, buttonY, buttonWidth, buttonHeight)
+        shapeRenderer.end()
+        
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
+        shapeRenderer.color = Color.RED
+        shapeRenderer.rect(buttonX, buttonY, buttonWidth, buttonHeight)
+        shapeRenderer.end()
+        Gdx.gl.glDisable(GL20.GL_BLEND)
+        
+        batch.begin()
+        font.color = Color.WHITE
+        font.draw(batch, "Surrender", buttonX + 8, buttonY + 22)
+        batch.end()
+    }
+    
+    private fun drawSurrenderDialog() {
+        val dialogWidth = 300f
+        val dialogHeight = 150f
+        val dialogX = (800f - dialogWidth) / 2f
+        val dialogY = (600f - dialogHeight) / 2f
+        
+        // Darken background
+        Gdx.gl.glEnable(GL20.GL_BLEND)
+        shapeRenderer.projectionMatrix = uiMatrix
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled)
+        shapeRenderer.color = Color(0f, 0f, 0f, 0.7f)
+        shapeRenderer.rect(0f, 0f, 800f, 600f)
+        
+        // Dialog background
+        shapeRenderer.color = Color(0.15f, 0.15f, 0.2f, 1f)
+        shapeRenderer.rect(dialogX, dialogY, dialogWidth, dialogHeight)
+        shapeRenderer.end()
+        
+        // Dialog border
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
+        shapeRenderer.color = Color.RED
+        shapeRenderer.rect(dialogX, dialogY, dialogWidth, dialogHeight)
+        shapeRenderer.end()
+        
+        // Buttons
+        val buttonWidth = 100f
+        val buttonHeight = 35f
+        val confirmX = dialogX + 30f
+        val cancelX = dialogX + dialogWidth - buttonWidth - 30f
+        val buttonY = dialogY + 25f
+        
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled)
+        
+        // Confirm button
+        val mouseX = Gdx.input.x * (800f / Gdx.graphics.width.toFloat())
+        val mouseY = (Gdx.graphics.height - Gdx.input.y) * (600f / Gdx.graphics.height.toFloat())
+        
+        val hoverConfirm = mouseX >= confirmX && mouseX <= confirmX + buttonWidth &&
+                          mouseY >= buttonY && mouseY <= buttonY + buttonHeight
+        shapeRenderer.color = if (hoverConfirm) Color(0.6f, 0.2f, 0.2f, 1f) else Color(0.4f, 0.15f, 0.15f, 1f)
+        shapeRenderer.rect(confirmX, buttonY, buttonWidth, buttonHeight)
+        
+        // Cancel button
+        val hoverCancel = mouseX >= cancelX && mouseX <= cancelX + buttonWidth &&
+                         mouseY >= buttonY && mouseY <= buttonY + buttonHeight
+        shapeRenderer.color = if (hoverCancel) Color(0.3f, 0.5f, 0.3f, 1f) else Color(0.2f, 0.4f, 0.2f, 1f)
+        shapeRenderer.rect(cancelX, buttonY, buttonWidth, buttonHeight)
+        
+        shapeRenderer.end()
+        Gdx.gl.glDisable(GL20.GL_BLEND)
+        
+        // Dialog text
+        batch.begin()
+        font.color = Color.WHITE
+        font.draw(batch, "Surrender?", dialogX + 110, dialogY + dialogHeight - 25)
+        font.color = Color.LIGHT_GRAY
+        font.draw(batch, "This will count as a loss.", dialogX + 65, dialogY + dialogHeight - 55)
+        
+        font.color = Color.WHITE
+        font.draw(batch, "Confirm", confirmX + 20, buttonY + 23)
+        font.draw(batch, "Cancel", cancelX + 25, buttonY + 23)
+        batch.end()
+    }
+    
+    private fun handleSurrenderDialogClick() {
+        val dialogWidth = 300f
+        val dialogHeight = 150f
+        val dialogX = (800f - dialogWidth) / 2f
+        val dialogY = (600f - dialogHeight) / 2f
+        
+        val buttonWidth = 100f
+        val buttonHeight = 35f
+        val confirmX = dialogX + 30f
+        val cancelX = dialogX + dialogWidth - buttonWidth - 30f
+        val buttonY = dialogY + 25f
+        
+        val mouseX = Gdx.input.x * (800f / Gdx.graphics.width.toFloat())
+        val mouseY = (Gdx.graphics.height - Gdx.input.y) * (600f / Gdx.graphics.height.toFloat())
+        
+        // Confirm button
+        if (mouseX >= confirmX && mouseX <= confirmX + buttonWidth &&
+            mouseY >= buttonY && mouseY <= buttonY + buttonHeight) {
+            confirmSurrender()
+        }
+        
+        // Cancel button
+        if (mouseX >= cancelX && mouseX <= cancelX + buttonWidth &&
+            mouseY >= buttonY && mouseY <= buttonY + buttonHeight) {
+            showSurrenderDialog = false
+        }
+    }
+    
+    private fun checkSurrenderButtonClick(): Boolean {
+        val buttonX = 700f
+        val buttonY = 560f
+        val buttonWidth = 90f
+        val buttonHeight = 30f
+        
+        val mouseX = Gdx.input.x * (800f / Gdx.graphics.width.toFloat())
+        val mouseY = (Gdx.graphics.height - Gdx.input.y) * (600f / Gdx.graphics.height.toFloat())
+        
+        if (mouseX >= buttonX && mouseX <= buttonX + buttonWidth &&
+            mouseY >= buttonY && mouseY <= buttonY + buttonHeight) {
+            showSurrenderDialog = true
+            return true
+        }
+        return false
+    }
+    
+    private fun confirmSurrender() {
+        showSurrenderDialog = false
+        app.networkClient.leaveGame(surrender = true)
     }
     
     private fun handleCameraMovement(delta: Float) {

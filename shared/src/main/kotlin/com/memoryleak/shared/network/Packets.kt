@@ -117,6 +117,19 @@ data class OpponentDisconnectedPacket(
     val youWin: Boolean = true
 ) : Packet()
 
+@Serializable
+@SerialName("leave_game")
+data class LeaveGamePacket(
+    val surrender: Boolean = false  // true if player surrenders, false if just leaving after game ended
+) : Packet()
+
+@Serializable
+@SerialName("game_left")
+data class GameLeftPacket(
+    val success: Boolean = true,
+    val message: String = "Left game successfully"
+) : Packet()
+
 // ============================================================================
 // STATISTICS PACKETS
 // ============================================================================

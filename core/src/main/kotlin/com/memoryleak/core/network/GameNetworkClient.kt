@@ -92,7 +92,8 @@ class GameNetworkClient(private val app: MemoryLeakApp, private val host: String
                 
                 is MatchFoundPacket -> {
                     isInMatchmaking = false
-                    myId = if (packet.isPlayer1) "player1" else "player2"
+                    // Note: Don't overwrite myId - keep the UUID from AuthResponsePacket
+                    // myId is already set correctly from login
                     onMatchFound?.invoke(packet)
                 }
                 
@@ -140,6 +141,14 @@ class GameNetworkClient(private val app: MemoryLeakApp, private val host: String
                 is OpponentDisconnectedPacket -> {
                     println("Opponent disconnected: ${packet.message}")
                     onOpponentDisconnected?.invoke(packet.youWin)
+                }
+                
+                is GameLeftPacket -> {
+                    println("Left game: ${packet.message}")
+                    // Clear game state on successful leave
+                    if (packet.success) {
+                        clearGameState()
+                    }
                 }
                 
                 is ErrorPacket -> {
@@ -205,6 +214,15 @@ class GameNetworkClient(private val app: MemoryLeakApp, private val host: String
     fun sendCommand(cmd: CommandPacket) {
         scope.launch {
             val json = Json.encodeToString<Packet>(cmd)
+            session?.send(Frame.Text(json))
+        }
+    }
+    
+    // Leave game / Surrender
+    fun leaveGame(surrender: Boolean = false) {
+        scope.launch {
+            val packet = LeaveGamePacket(surrender)
+            val json = Json.encodeToString<Packet>(packet)
             session?.send(Frame.Text(json))
         }
     }
