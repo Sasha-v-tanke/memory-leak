@@ -33,6 +33,11 @@ class DeckSelectionScreen(private val app: MemoryLeakApp) : Screen {
     // Selected cards (max 10)
     private val selectedCards = mutableListOf<CardType>()
     
+    // Saved decks from server
+    private var savedDecks = mutableListOf<com.memoryleak.shared.network.SavedDeck>()
+    private var deckNameInput = "My Deck"
+    private var isEnteringDeckName = false
+    
     // Scroll position
     private var scrollY = 0f
     
@@ -69,7 +74,7 @@ class DeckSelectionScreen(private val app: MemoryLeakApp) : Screen {
         titleFont.data.setScale(1.5f)
         smallFont.data.setScale(0.8f)
         
-        // Load previously selected deck
+        // Load previously selected deck from local state
         selectedCards.clear()
         app.selectedDeck.forEach { typeName ->
             try {
@@ -78,6 +83,18 @@ class DeckSelectionScreen(private val app: MemoryLeakApp) : Screen {
                 // Ignore invalid card types
             }
         }
+        
+        // Set up callback for when decks are loaded from server
+        app.networkClient.onDecksLoaded = { decks ->
+            com.badlogic.gdx.Gdx.app.postRunnable {
+                savedDecks.clear()
+                savedDecks.addAll(decks)
+                println("Loaded ${decks.size} saved decks from server")
+            }
+        }
+        
+        // Load decks from server
+        app.networkClient.loadDecks()
     }
     
     override fun render(delta: Float) {
@@ -137,26 +154,59 @@ class DeckSelectionScreen(private val app: MemoryLeakApp) : Screen {
         // Draw selected deck panel
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled)
         shapeRenderer.color = Color(0.15f, 0.15f, 0.22f, 1f)
-        shapeRenderer.rect(0f, 0f, screenWidth, 80f)
+        shapeRenderer.rect(0f, 0f, screenWidth, 100f)
         shapeRenderer.end()
         
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
         shapeRenderer.color = Color.GRAY
-        shapeRenderer.line(0f, 80f, screenWidth, 80f)
+        shapeRenderer.line(0f, 100f, screenWidth, 100f)
         shapeRenderer.end()
         
         // Draw selected cards
         var selX = 10f
-        selectedCards.forEachIndexed { index, cardType ->
-            drawMiniCard(cardType, selX, 5f, 70f, 70f, true)
-            selX += 75f
+        selectedCards.forEachIndexed { _, cardType ->
+            drawMiniCard(cardType, selX, 25f, 55f, 55f, true)
+            selX += 60f
+        }
+        
+        // Draw saved decks dropdown area
+        batch.begin()
+        smallFont.color = Color.YELLOW
+        smallFont.draw(batch, "Saved Decks:", 10f, 20f)
+        batch.end()
+        
+        // Draw saved deck buttons (horizontal scroll area)
+        var deckX = 100f
+        savedDecks.take(5).forEach { deck ->
+            drawDeckButton(deck, deckX, 3f, 80f, 18f)
+            deckX += 85f
         }
         
         // Draw buttons
-        drawButton(screenWidth - 110, 20f, 100f, 40f, "Save", Color(0.2f, 0.6f, 0.2f, 1f))
-        drawButton(screenWidth - 220, 20f, 100f, 40f, "Back", Color(0.5f, 0.3f, 0.3f, 1f))
+        drawButton(screenWidth - 110, 5f, 100f, 30f, "Use", Color(0.2f, 0.6f, 0.2f, 1f))
+        drawButton(screenWidth - 110, 40f, 100f, 30f, "Save", Color(0.2f, 0.4f, 0.6f, 1f))
+        drawButton(screenWidth - 110, 75f, 100f, 20f, "Back", Color(0.5f, 0.3f, 0.3f, 1f))
         
         Gdx.gl.glDisable(GL20.GL_BLEND)
+    }
+    
+    private fun drawDeckButton(deck: com.memoryleak.shared.network.SavedDeck, x: Float, y: Float, width: Float, height: Float) {
+        val isHovered = isMouseOver(x, y, width, height)
+        
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled)
+        shapeRenderer.color = if (isHovered) Color(0.35f, 0.35f, 0.45f, 0.9f) else Color(0.25f, 0.25f, 0.35f, 0.9f)
+        shapeRenderer.rect(x, y, width, height)
+        shapeRenderer.end()
+        
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
+        shapeRenderer.color = Color.GRAY
+        shapeRenderer.rect(x, y, width, height)
+        shapeRenderer.end()
+        
+        batch.begin()
+        smallFont.color = Color.WHITE
+        smallFont.draw(batch, deck.name.take(10), x + 3, y + height - 3)
+        batch.end()
     }
     
     private fun drawCard(cardType: CardType, x: Float, y: Float, width: Float, height: Float) {
@@ -256,27 +306,40 @@ class DeckSelectionScreen(private val app: MemoryLeakApp) : Screen {
         
         // Handle clicks
         if (Gdx.input.justTouched()) {
-            val mouseX = Gdx.input.x * (screenWidth / Gdx.graphics.width)
-            val mouseY = (Gdx.graphics.height - Gdx.input.y) * (screenHeight / Gdx.graphics.height)
-            
-            // Check button clicks
-            if (isMouseOver(screenWidth - 110, 20f, 100f, 40f)) {
-                saveDeck()
+            // Check button clicks - Use button
+            if (isMouseOver(screenWidth - 110, 5f, 100f, 30f)) {
+                useDeck()
                 return
             }
-            if (isMouseOver(screenWidth - 220, 20f, 100f, 40f)) {
+            // Save button
+            if (isMouseOver(screenWidth - 110, 40f, 100f, 30f)) {
+                saveDeckToServer()
+                return
+            }
+            // Back button
+            if (isMouseOver(screenWidth - 110, 75f, 100f, 20f)) {
                 app.showMainMenu()
                 return
             }
             
+            // Check saved deck selection
+            var deckX = 100f
+            savedDecks.take(5).forEach { deck ->
+                if (isMouseOver(deckX, 3f, 80f, 18f)) {
+                    loadDeckFromSaved(deck)
+                    return
+                }
+                deckX += 85f
+            }
+            
             // Check selected card removal
             var selX = 10f
-            selectedCards.forEachIndexed { index, cardType ->
-                if (isMouseOver(selX, 5f, 70f, 70f)) {
+            selectedCards.toList().forEach { cardType ->
+                if (isMouseOver(selX, 25f, 55f, 55f)) {
                     selectedCards.remove(cardType)
                     return
                 }
-                selX += 75f
+                selX += 60f
             }
             
             // Check card selection
@@ -316,9 +379,34 @@ class DeckSelectionScreen(private val app: MemoryLeakApp) : Screen {
         }
     }
     
-    private fun saveDeck() {
+    private fun useDeck() {
+        // Use the selected deck locally and go back to main menu
         app.selectedDeck = selectedCards.map { it.name }
         app.showMainMenu()
+    }
+    
+    private fun saveDeckToServer() {
+        // Save the current deck to the server
+        if (selectedCards.isNotEmpty()) {
+            // Use timestamp-based naming to avoid conflicts
+            val timestamp = java.text.SimpleDateFormat("MMdd_HHmm").format(java.util.Date())
+            val deckName = "Deck_$timestamp"
+            app.networkClient.saveDeck(deckName, selectedCards.map { it.name })
+            // Also update local selection
+            app.selectedDeck = selectedCards.map { it.name }
+        }
+    }
+    
+    private fun loadDeckFromSaved(deck: com.memoryleak.shared.network.SavedDeck) {
+        // Load a saved deck from the server
+        selectedCards.clear()
+        deck.cardTypes.forEach { typeName ->
+            try {
+                selectedCards.add(CardType.valueOf(typeName))
+            } catch (e: Exception) {
+                // Ignore invalid card types
+            }
+        }
     }
     
     private fun isMouseOver(x: Float, y: Float, width: Float, height: Float): Boolean {

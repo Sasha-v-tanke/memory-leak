@@ -10,7 +10,31 @@ import org.jetbrains.exposed.sql.javatime.timestamp
  * - game_sessions: Active and completed game sessions
  * - match_results: Final results of completed matches
  * - player_stats: Aggregated player statistics
+ * - player_accounts: User accounts with credentials
+ * - player_decks: Saved player decks
  */
+
+/**
+ * Table for storing user accounts.
+ */
+object PlayerAccountsTable : UUIDTable("player_accounts") {
+    val username = varchar("username", 64).uniqueIndex()
+    val nickname = varchar("nickname", 64)
+    val passwordHash = varchar("password_hash", 256)  // SHA-256 hash
+    val createdAt = timestamp("created_at")
+    val lastLoginAt = timestamp("last_login_at")
+}
+
+/**
+ * Table for storing player decks.
+ */
+object PlayerDecksTable : UUIDTable("player_decks") {
+    val playerId = varchar("player_id", 64).index()
+    val deckName = varchar("deck_name", 64)
+    val cardTypes = text("card_types")  // Comma-separated card type names
+    val createdAt = timestamp("created_at")
+    val updatedAt = timestamp("updated_at")
+}
 
 /**
  * Table for storing game sessions.

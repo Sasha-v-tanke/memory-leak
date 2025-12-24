@@ -37,6 +37,10 @@ class GameNetworkClient(private val app: MemoryLeakApp, private val host: String
         private set
     var matchmakingStatus: String = ""
     
+    // Saved decks from server
+    var savedDecks: List<SavedDeck> = emptyList()
+        private set
+    
     // Callbacks for UI updates
     var onAuthResponse: ((Boolean, String, PlayerStatsData?) -> Unit)? = null
     var onMatchFound: ((MatchFoundPacket) -> Unit)? = null
@@ -45,6 +49,7 @@ class GameNetworkClient(private val app: MemoryLeakApp, private val host: String
     var onOpponentDisconnected: ((Boolean) -> Unit)? = null
     var onError: ((String) -> Unit)? = null
     var onStateUpdate: (() -> Unit)? = null
+    var onDecksLoaded: ((List<SavedDeck>) -> Unit)? = null
     
     private var session: DefaultClientWebSocketSession? = null
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -92,7 +97,10 @@ class GameNetworkClient(private val app: MemoryLeakApp, private val host: String
                 
                 is MatchFoundPacket -> {
                     isInMatchmaking = false
-                    myId = if (packet.isPlayer1) "player1" else "player2"
+                    // IMPORTANT: Don't overwrite myId here!
+                    // myId is set by AuthResponsePacket with the player's UUID from the server.
+                    // This UUID is used to identify the player's entities (ownerId matches myId).
+                    // The isPlayer1 field in the packet indicates position (left/right) only.
                     onMatchFound?.invoke(packet)
                 }
                 
@@ -142,6 +150,14 @@ class GameNetworkClient(private val app: MemoryLeakApp, private val host: String
                     onOpponentDisconnected?.invoke(packet.youWin)
                 }
                 
+                is GameLeftPacket -> {
+                    println("Left game: ${packet.message}")
+                    // Clear game state on successful leave
+                    if (packet.success) {
+                        clearGameState()
+                    }
+                }
+                
                 is ErrorPacket -> {
                     println("Server error: ${packet.message}")
                     onError?.invoke(packet.message)
@@ -150,6 +166,12 @@ class GameNetworkClient(private val app: MemoryLeakApp, private val host: String
                 is AllCardsResponsePacket -> {
                     // Handle card list for deck building
                     println("Received ${packet.cards.size} card definitions")
+                }
+                
+                is DecksResponsePacket -> {
+                    savedDecks = packet.decks
+                    println("Received ${packet.decks.size} saved decks")
+                    onDecksLoaded?.invoke(packet.decks)
                 }
                 
                 is StatsResponsePacket -> {
@@ -209,6 +231,15 @@ class GameNetworkClient(private val app: MemoryLeakApp, private val host: String
         }
     }
     
+    // Leave game / Surrender
+    fun leaveGame(surrender: Boolean = false) {
+        scope.launch {
+            val packet = LeaveGamePacket(surrender)
+            val json = Json.encodeToString<Packet>(packet)
+            session?.send(Frame.Text(json))
+        }
+    }
+    
     // Stats
     fun requestStats() {
         scope.launch {
@@ -222,6 +253,22 @@ class GameNetworkClient(private val app: MemoryLeakApp, private val host: String
     fun requestAllCards() {
         scope.launch {
             val packet = GetAllCardsPacket()
+            val json = Json.encodeToString<Packet>(packet)
+            session?.send(Frame.Text(json))
+        }
+    }
+    
+    fun loadDecks() {
+        scope.launch {
+            val packet = LoadDecksPacket()
+            val json = Json.encodeToString<Packet>(packet)
+            session?.send(Frame.Text(json))
+        }
+    }
+    
+    fun saveDeck(deckName: String, cardTypes: List<String>) {
+        scope.launch {
+            val packet = SaveDeckPacket(deckName, cardTypes)
             val json = Json.encodeToString<Packet>(packet)
             session?.send(Frame.Text(json))
         }

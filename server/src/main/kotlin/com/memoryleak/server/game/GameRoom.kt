@@ -2,6 +2,7 @@ package com.memoryleak.server.game
 
 import com.memoryleak.server.database.DatabaseConfig
 import com.memoryleak.server.database.GameRepository
+import com.memoryleak.server.playerSessions
 import com.memoryleak.shared.model.*
 import com.memoryleak.shared.network.*
 import io.ktor.websocket.*
@@ -902,6 +903,14 @@ class GameRoom {
         
         // Save game results to database
         saveGameResults(winnerId)
+        
+        // Clear currentGameRoom for all players so they can start a new match
+        players.keys.forEach { sessionId ->
+            playerSessions[sessionId]?.currentGameRoom = null
+        }
+        
+        // Stop the game loop
+        isRunning = false
     }
     
     private fun saveGameResults(winnerId: String) {
@@ -990,13 +999,25 @@ class GameRoom {
         }
     }
 
+    suspend fun handleSurrender(sessionId: String) {
+        // Find the opponent - they are the winner
+        val opponentId = players.keys.firstOrNull { it != sessionId }
+        if (opponentId != null) {
+            // Broadcast game over with opponent as winner
+            broadcastGameOver(opponentId)
+        }
+    }
+
     fun removePlayer(sessionId: String) {
         // Track disconnect in database (if game was in progress)
         if (DatabaseConfig.isConnected() && dbSessionId != null && players.size > 1) {
             GameRepository.abandonSession(dbSessionId!!, sessionId)
         }
         
-        // Notify opponent of disconnect
+        // Clear currentGameRoom for this player
+        playerSessions[sessionId]?.currentGameRoom = null
+        
+        // Notify opponent of disconnect and clear their game room
         gameScope.launch {
             val opponentId = players.keys.firstOrNull { it != sessionId }
             if (opponentId != null) {
@@ -1008,6 +1029,9 @@ class GameRoom {
                             youWin = true
                         )
                         opponentSocket.send(Frame.Text(Json.encodeToString<Packet>(packet)))
+                        
+                        // Clear opponent's game room too
+                        playerSessions[opponentId]?.currentGameRoom = null
                     } catch (e: Exception) {
                         // Ignore
                     }
@@ -1020,5 +1044,10 @@ class GameRoom {
         sessions.remove(sessionId)
         // Cleanup entities owned by this player
         entities.entries.removeIf { it.value.ownerId == sessionId }
+        
+        // Stop the game if no players left
+        if (players.isEmpty()) {
+            isRunning = false
+        }
     }
 }

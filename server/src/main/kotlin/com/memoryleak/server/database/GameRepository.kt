@@ -268,6 +268,20 @@ object GameRepository {
             emptyList()
         }
     }
+    
+    /**
+     * Convenience method to save deck (delegates to DeckRepository).
+     */
+    fun saveDeck(playerId: String, deckName: String, cardTypes: List<String>): Boolean {
+        return DeckRepository.saveDeck(playerId, deckName, cardTypes)
+    }
+    
+    /**
+     * Convenience method to get player decks (delegates to DeckRepository).
+     */
+    fun getPlayerDecks(playerId: String): List<com.memoryleak.shared.network.SavedDeck> {
+        return DeckRepository.getPlayerDecks(playerId)
+    }
 }
 
 /**
@@ -281,3 +295,262 @@ data class MatchHistoryEntry(
     val gameDurationSeconds: Int,
     val recordedAt: Long
 )
+
+/**
+ * Authentication result.
+ */
+data class AuthResult(
+    val success: Boolean,
+    val playerId: String? = null,
+    val nickname: String? = null,
+    val message: String
+)
+
+/**
+ * Repository for authentication operations.
+ */
+object AuthRepository {
+    
+    /**
+     * Hash a password using SHA-256 with a salt.
+     * Salt is prepended to the hash result: "salt:hash"
+     */
+    private fun hashPassword(password: String, salt: String = generateSalt()): String {
+        val saltedPassword = "$salt$password"
+        val bytes = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(saltedPassword.toByteArray())
+        val hash = bytes.joinToString("") { "%02x".format(it) }
+        return "$salt:$hash"
+    }
+    
+    /**
+     * Generate a random salt for password hashing.
+     */
+    private fun generateSalt(): String {
+        val bytes = ByteArray(16)
+        java.security.SecureRandom().nextBytes(bytes)
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
+    
+    /**
+     * Verify a password against a stored hash (salt:hash format).
+     */
+    private fun verifyPassword(password: String, storedHash: String): Boolean {
+        val parts = storedHash.split(":")
+        return if (parts.size == 2) {
+            val salt = parts[0]
+            val expectedHash = hashPassword(password, salt)
+            expectedHash == storedHash
+        } else {
+            // Legacy hash without salt - compare directly
+            val bytes = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(password.toByteArray())
+            val hash = bytes.joinToString("") { "%02x".format(it) }
+            hash == storedHash
+        }
+    }
+    
+    /**
+     * Register a new user account.
+     */
+    fun register(username: String, password: String, nickname: String): AuthResult {
+        if (!DatabaseConfig.isConnected()) {
+            return AuthResult(false, message = "Database not available")
+        }
+        
+        if (username.length < 3) {
+            return AuthResult(false, message = "Username must be at least 3 characters")
+        }
+        
+        if (password.length < 4) {
+            return AuthResult(false, message = "Password must be at least 4 characters")
+        }
+        
+        if (nickname.length < 2) {
+            return AuthResult(false, message = "Nickname must be at least 2 characters")
+        }
+        
+        return try {
+            transaction {
+                // Check if username already exists
+                val existing = PlayerAccountsTable
+                    .select { PlayerAccountsTable.username eq username }
+                    .singleOrNull()
+                
+                if (existing != null) {
+                    return@transaction AuthResult(false, message = "Username already taken")
+                }
+                
+                // Create new account with salted password hash
+                val id = PlayerAccountsTable.insertAndGetId {
+                    it[PlayerAccountsTable.username] = username
+                    it[PlayerAccountsTable.nickname] = nickname
+                    it[PlayerAccountsTable.passwordHash] = hashPassword(password)
+                    it[createdAt] = Instant.now()
+                    it[lastLoginAt] = Instant.now()
+                }.value
+                
+                AuthResult(
+                    success = true,
+                    playerId = id.toString(),
+                    nickname = nickname,
+                    message = "Registration successful"
+                )
+            }
+        } catch (e: Exception) {
+            println("[AuthRepository] Registration failed: ${e.message}")
+            AuthResult(false, message = "Registration failed: ${e.message}")
+        }
+    }
+    
+    /**
+     * Login with username and password.
+     */
+    fun login(username: String, password: String): AuthResult {
+        if (!DatabaseConfig.isConnected()) {
+            return AuthResult(false, message = "Database not available")
+        }
+        
+        return try {
+            transaction {
+                val account = PlayerAccountsTable
+                    .select { PlayerAccountsTable.username eq username }
+                    .singleOrNull()
+                
+                if (account == null) {
+                    return@transaction AuthResult(false, message = "User not found")
+                }
+                
+                val storedHash = account[PlayerAccountsTable.passwordHash]
+                if (!verifyPassword(password, storedHash)) {
+                    return@transaction AuthResult(false, message = "Invalid password")
+                }
+                
+                // Update last login time
+                PlayerAccountsTable.update({ PlayerAccountsTable.username eq username }) {
+                    it[lastLoginAt] = Instant.now()
+                }
+                
+                AuthResult(
+                    success = true,
+                    playerId = account[PlayerAccountsTable.id].value.toString(),
+                    nickname = account[PlayerAccountsTable.nickname],
+                    message = "Login successful"
+                )
+            }
+        } catch (e: Exception) {
+            println("[AuthRepository] Login failed: ${e.message}")
+            AuthResult(false, message = "Login failed: ${e.message}")
+        }
+    }
+    
+    /**
+     * Get user's nickname by player ID.
+     */
+    fun getNickname(playerId: String): String? {
+        if (!DatabaseConfig.isConnected()) return null
+        
+        return try {
+            transaction {
+                val uuid = UUID.fromString(playerId)
+                PlayerAccountsTable
+                    .select { PlayerAccountsTable.id eq uuid }
+                    .singleOrNull()
+                    ?.get(PlayerAccountsTable.nickname)
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+}
+
+/**
+ * Repository for deck operations.
+ */
+object DeckRepository {
+    
+    /**
+     * Save a deck for a player.
+     */
+    fun saveDeck(playerId: String, deckName: String, cardTypes: List<String>): Boolean {
+        if (!DatabaseConfig.isConnected()) return false
+        
+        return try {
+            transaction {
+                // Check if deck with same name exists
+                val existing = PlayerDecksTable
+                    .select { (PlayerDecksTable.playerId eq playerId) and (PlayerDecksTable.deckName eq deckName) }
+                    .singleOrNull()
+                
+                val cardTypesStr = cardTypes.joinToString(",")
+                
+                if (existing != null) {
+                    // Update existing deck
+                    PlayerDecksTable.update({ 
+                        (PlayerDecksTable.playerId eq playerId) and (PlayerDecksTable.deckName eq deckName) 
+                    }) {
+                        it[PlayerDecksTable.cardTypes] = cardTypesStr
+                        it[updatedAt] = Instant.now()
+                    }
+                } else {
+                    // Create new deck
+                    PlayerDecksTable.insert {
+                        it[PlayerDecksTable.playerId] = playerId
+                        it[PlayerDecksTable.deckName] = deckName
+                        it[PlayerDecksTable.cardTypes] = cardTypesStr
+                        it[createdAt] = Instant.now()
+                        it[updatedAt] = Instant.now()
+                    }
+                }
+            }
+            true
+        } catch (e: Exception) {
+            println("[DeckRepository] Failed to save deck: ${e.message}")
+            false
+        }
+    }
+    
+    /**
+     * Get all decks for a player.
+     */
+    fun getPlayerDecks(playerId: String): List<com.memoryleak.shared.network.SavedDeck> {
+        if (!DatabaseConfig.isConnected()) return emptyList()
+        
+        return try {
+            transaction {
+                PlayerDecksTable
+                    .select { PlayerDecksTable.playerId eq playerId }
+                    .map { row ->
+                        com.memoryleak.shared.network.SavedDeck(
+                            id = row[PlayerDecksTable.id].value.toString(),
+                            name = row[PlayerDecksTable.deckName],
+                            cardTypes = row[PlayerDecksTable.cardTypes].split(",").filter { it.isNotBlank() }
+                        )
+                    }
+            }
+        } catch (e: Exception) {
+            println("[DeckRepository] Failed to get decks: ${e.message}")
+            emptyList()
+        }
+    }
+    
+    /**
+     * Delete a deck.
+     */
+    fun deleteDeck(playerId: String, deckId: String): Boolean {
+        if (!DatabaseConfig.isConnected()) return false
+        
+        return try {
+            transaction {
+                val uuid = UUID.fromString(deckId)
+                PlayerDecksTable.deleteWhere { 
+                    (PlayerDecksTable.id eq uuid) and (PlayerDecksTable.playerId eq playerId)
+                }
+            }
+            true
+        } catch (e: Exception) {
+            println("[DeckRepository] Failed to delete deck: ${e.message}")
+            false
+        }
+    }
+}
