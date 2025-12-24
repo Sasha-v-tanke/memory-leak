@@ -4,6 +4,9 @@ import com.memoryleak.shared.model.*
 import java.util.UUID
 
 object DeckBuilder {
+    // The permanent factory card that's always in hand
+    private val permanentFactoryCards = mutableMapOf<String, Card>()  // playerId -> factory card
+    
     fun createDefaultDeck(): MutableList<Card> {
         val deck = mutableListOf<Card>()
         
@@ -48,10 +51,7 @@ object DeckBuilder {
         deck.add(Card(UUID.randomUUID().toString(), CardType.SPAWN_INDEXER, 50, 45, productionTime = 3f))
         deck.add(Card(UUID.randomUUID().toString(), CardType.SPAWN_TRANSACTION_GUARD, 75, 60, productionTime = 4f))
         
-        // === BUILDING (always available) ===
-        deck.add(Card(UUID.randomUUID().toString(), CardType.BUILD_FACTORY, 100, 0, productionTime = 0f))
-        deck.add(Card(UUID.randomUUID().toString(), CardType.BUILD_COMPILER_FACTORY, 150, 50, productionTime = 0f))
-        deck.add(Card(UUID.randomUUID().toString(), CardType.BUILD_INTERPRETER_FACTORY, 80, 30, productionTime = 0f))
+        // No factory cards in main deck - they go to permanent hand slot
         
         deck.shuffle()
         return deck
@@ -60,13 +60,8 @@ object DeckBuilder {
     fun createDeckFromSelection(selectedTypes: List<String>): MutableList<Card> {
         val deck = mutableListOf<Card>()
         
-        // Always add factory cards
-        deck.add(Card(UUID.randomUUID().toString(), CardType.BUILD_FACTORY, 100, 0, productionTime = 0f))
-        deck.add(Card(UUID.randomUUID().toString(), CardType.BUILD_COMPILER_FACTORY, 150, 50, productionTime = 0f))
-        deck.add(Card(UUID.randomUUID().toString(), CardType.BUILD_INTERPRETER_FACTORY, 80, 30, productionTime = 0f))
-        
-        // Add selected cards (up to 10, duplicates allowed)
-        selectedTypes.take(10).forEach { typeName ->
+        // Add selected cards (up to 10, duplicates allowed) - NO factory cards in deck
+        selectedTypes.filter { !it.startsWith("BUILD_") }.take(10).forEach { typeName ->
             try {
                 val cardType = CardType.valueOf(typeName)
                 val definition = UnitStatsData.getCardDefinition(cardType)
@@ -95,25 +90,67 @@ object DeckBuilder {
         return deck
     }
     
+    /**
+     * Create and store the permanent factory card for a player.
+     * This card is always in hand slot 0 and never consumed.
+     */
+    fun initializePermanentFactoryCard(player: PlayerState) {
+        val factoryCard = Card(
+            id = "FACTORY_${player.id}",
+            type = CardType.BUILD_FACTORY,
+            memoryCost = 100,
+            cpuCost = 0,
+            productionTime = 0f
+        )
+        permanentFactoryCards[player.id] = factoryCard
+        
+        // Add factory card to hand (slot 0)
+        player.hand.add(0, factoryCard)
+    }
+    
+    /**
+     * Draw a card from deck.
+     * @param keepFactoryCard if true, factory card was just played and should be returned to hand
+     */
     fun drawCard(player: PlayerState) {
-        if (player.hand.size >= 4) return // Hand is full
+        // Ensure factory card is always in hand (slot 0)
+        val factoryCard = permanentFactoryCards[player.id]
+        if (factoryCard != null && !player.hand.any { it.type.isFactoryCard() }) {
+            player.hand.add(0, factoryCard)
+        }
+        
+        // Count non-factory cards in hand
+        val nonFactoryCards = player.hand.count { !it.type.isFactoryCard() }
+        if (nonFactoryCards >= 4) return // Hand is full (4 regular + 1 factory = 5)
+        
+        // Clean up any factory cards that somehow got into deck (safety)
+        player.deck.removeAll { it.type.isFactoryCard() }
         
         if (player.deck.isEmpty()) {
-            // Reshuffle discard pile
-            if (player.discardPile.isEmpty()) return // No cards left
-            player.deck.addAll(player.discardPile)
-            player.discardPile.clear()
+            // Reshuffle discard pile (excluding factory cards)
+            val nonFactoryDiscard = player.discardPile.filter { !it.type.isFactoryCard() }
+            if (nonFactoryDiscard.isEmpty()) return // No cards left
+            player.deck.addAll(nonFactoryDiscard)
+            player.discardPile.removeAll { it.type.isFactoryCard() || it in nonFactoryDiscard.toSet() }
             player.deck.shuffle()
         }
         
-        val card = player.deck.removeAt(0)
-        player.hand.add(card)
+        if (player.deck.isEmpty()) return
+        
+        // Draw the first card (now guaranteed to be non-factory)
+        val cardToDraw = player.deck.removeAt(0)
+        player.hand.add(cardToDraw)
     }
     
     fun playCard(player: PlayerState, cardId: String): Card? {
         val card = player.hand.find { it.id == cardId } ?: return null
         player.hand.remove(card)
-        player.discardPile.add(card)
+        
+        // Factory cards don't go to discard - they stay available
+        if (!card.type.isFactoryCard()) {
+            player.discardPile.add(card)
+        }
+        
         return card
     }
 }

@@ -129,34 +129,34 @@ class GameScreen(private val app: MemoryLeakApp) : Screen {
                 if (isPlacingCard && selectedCardId != null) {
                     val worldPos = camera.unproject(Vector3(screenX.toFloat(), screenY.toFloat(), 0f))
                     
-                    // Check if we need target selection for this card
-                    if (isUnitCard(pendingCardType) && !isSelectingTarget) {
-                        // Unit card - need to select target entity after position
-                        isSelectingTarget = true
-                        network.sendCommand(CommandPacket(
-                            commandType = CommandType.PLAY_CARD,
-                            cardId = selectedCardId,
-                            targetX = worldPos.x,
-                            targetY = worldPos.y,
-                            targetEntityId = null
-                        ))
-                        selectedCardId = null
-                        isPlacingCard = false
-                        return true
-                    } else {
-                        // Building or direct placement
-                        network.sendCommand(CommandPacket(
-                            commandType = CommandType.PLAY_CARD,
-                            cardId = selectedCardId,
-                            targetX = worldPos.x,
-                            targetY = worldPos.y
-                        ))
-                        selectedCardId = null
-                        isPlacingCard = false
-                        isSelectingTarget = false
-                        pendingCardType = null
-                        return true
+                    // Check if clicking on an entity (potential target)
+                    val clickedEntity = network.entities.values.find { entity ->
+                        val dx = entity.x - worldPos.x
+                        val dy = entity.y - worldPos.y
+                        (dx * dx + dy * dy) < 25 * 25
                     }
+                    
+                    // For unit cards, the clicked entity becomes the priority target
+                    val targetEntityId = if (isUnitCard(pendingCardType) && clickedEntity != null && 
+                                             clickedEntity.ownerId != network.myId) {
+                        clickedEntity.id  // Target is an enemy entity
+                    } else {
+                        null  // No specific target, unit will find targets via AI
+                    }
+                    
+                    // Send card command
+                    network.sendCommand(CommandPacket(
+                        commandType = CommandType.PLAY_CARD,
+                        cardId = selectedCardId,
+                        targetX = worldPos.x,
+                        targetY = worldPos.y,
+                        targetEntityId = targetEntityId
+                    ))
+                    selectedCardId = null
+                    isPlacingCard = false
+                    isSelectingTarget = false
+                    pendingCardType = null
+                    return true
                 }
                 
                 // Regular entity click
@@ -269,8 +269,8 @@ class GameScreen(private val app: MemoryLeakApp) : Screen {
         }
         batch.end()
         
-        // Spawn radius visualization
-        if (isPlacingCard) {
+        // Spawn radius visualization - only for factory cards (building placement)
+        if (isPlacingCard && pendingCardType?.isFactoryCard() == true) {
             val myBase = network.entities.values.find { it.ownerId == network.myId && it.type == EntityType.INSTANCE }
             if (myBase != null) {
                 Gdx.gl.glEnable(GL20.GL_BLEND)
@@ -485,7 +485,7 @@ class GameScreen(private val app: MemoryLeakApp) : Screen {
         
         // Instructions
         font.color = Color.LIGHT_GRAY
-        font.draw(batch, "Click card -> Click map to deploy | ESC=Cancel | WASD=Camera", 20f, 110f)
+        font.draw(batch, "Card -> Click enemy for target | Factory card for buildings | ESC=Cancel", 20f, 110f)
         
         batch.end()
         
