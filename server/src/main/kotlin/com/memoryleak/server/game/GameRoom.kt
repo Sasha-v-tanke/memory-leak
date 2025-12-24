@@ -120,7 +120,7 @@ class GameRoom {
         DeckBuilder.initializePermanentFactoryCard(player)
         
         // Draw 4 regular cards
-        repeat(4) { DeckBuilder.drawCard(player, false) }
+        repeat(4) { DeckBuilder.drawCard(player) }
         
         players[sessionId] = player
         
@@ -397,8 +397,8 @@ class GameRoom {
                 }
             }
             
-            // Draw new card (factory card is always kept available)
-            DeckBuilder.drawCard(player, card.type.isFactoryCard())
+            // Draw new card
+            DeckBuilder.drawCard(player)
         }
     }
     
@@ -812,11 +812,11 @@ class GameRoom {
                     unit.targetY = nearestNode.y
                     
                     // Actually move toward node
-                    val dx = nearestNode.x - unit.x
-                    val dy = nearestNode.y - unit.y
-                    val moveAmount = unit.speed * delta
-                    val dist = Math.sqrt((dx*dx + dy*dy).toDouble()).toFloat()
+                    val dist = distance(unit, nearestNode)
                     if (dist > 0) {
+                        val dx = nearestNode.x - unit.x
+                        val dy = nearestNode.y - unit.y
+                        val moveAmount = unit.speed * delta
                         unit.x += (dx / dist) * moveAmount
                         unit.y += (dy / dist) * moveAmount
                     }

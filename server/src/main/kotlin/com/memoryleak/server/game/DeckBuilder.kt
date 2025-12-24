@@ -112,8 +112,7 @@ object DeckBuilder {
      * Draw a card from deck.
      * @param keepFactoryCard if true, factory card was just played and should be returned to hand
      */
-    @Suppress("UNUSED_PARAMETER")
-    fun drawCard(player: PlayerState, keepFactoryCard: Boolean = false) {
+    fun drawCard(player: PlayerState) {
         // Ensure factory card is always in hand (slot 0)
         val factoryCard = permanentFactoryCards[player.id]
         if (factoryCard != null && !player.hand.any { it.type.isFactoryCard() }) {
