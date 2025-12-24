@@ -501,15 +501,24 @@ class GameRoom {
         }
         
         if (playerFactories.isEmpty()) {
-            println("No factories available for player $ownerId")
             return false
         }
         
         // Calculate wait time for each factory and find the one with shortest queue
+        // Only consider factories with initialized queues
         val factoryWaitTimes = playerFactories.mapNotNull { factory ->
-            val queue = factoryQueues[factory.id] ?: return@mapNotNull null
+            val queue = factoryQueues[factory.id]
+            if (queue == null) {
+                // Initialize queue if missing (shouldn't happen, but safety net)
+                factoryQueues[factory.id] = mutableListOf()
+                return@mapNotNull factory to 0f
+            }
             val waitTime = queue.sumOf { it.remainingTime.toDouble() }.toFloat()
             factory to waitTime
+        }
+        
+        if (factoryWaitTimes.isEmpty()) {
+            return false
         }
         
         val (bestFactory, _) = factoryWaitTimes.minByOrNull { it.second } ?: return false
@@ -541,7 +550,7 @@ class GameRoom {
             if (enemyBase != null) Pair(enemyBase.x, enemyBase.y) else Pair(mapWidth / 2, mapHeight / 2)
         }
         
-        // Add to queue
+        // Add to queue - queue is guaranteed to exist at this point
         val queueItem = ProductionQueueItem(
             unitType = unitType,
             remainingTime = productionTime,
@@ -549,9 +558,9 @@ class GameRoom {
             targetY = targetPos.second,
             targetEntityId = targetEntityId
         )
-        factoryQueues[bestFactory.id]?.add(queueItem)
+        val queue = factoryQueues[bestFactory.id]!!
+        queue.add(queueItem)
         
-        println("Queued $unitType at factory ${bestFactory.id} (wait: ${productionTime}s)")
         return true
     }
     

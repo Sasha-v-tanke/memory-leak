@@ -112,6 +112,7 @@ object DeckBuilder {
      * Draw a card from deck.
      * @param keepFactoryCard if true, factory card was just played and should be returned to hand
      */
+    @Suppress("UNUSED_PARAMETER")
     fun drawCard(player: PlayerState, keepFactoryCard: Boolean = false) {
         // Ensure factory card is always in hand (slot 0)
         val factoryCard = permanentFactoryCards[player.id]
@@ -123,18 +124,22 @@ object DeckBuilder {
         val nonFactoryCards = player.hand.count { !it.type.isFactoryCard() }
         if (nonFactoryCards >= 4) return // Hand is full (4 regular + 1 factory = 5)
         
+        // Clean up any factory cards that somehow got into deck (safety)
+        player.deck.removeAll { it.type.isFactoryCard() }
+        
         if (player.deck.isEmpty()) {
             // Reshuffle discard pile (excluding factory cards)
             val nonFactoryDiscard = player.discardPile.filter { !it.type.isFactoryCard() }
             if (nonFactoryDiscard.isEmpty()) return // No cards left
             player.deck.addAll(nonFactoryDiscard)
-            player.discardPile.removeAll(nonFactoryDiscard)
+            player.discardPile.removeAll { it.type.isFactoryCard() || it in nonFactoryDiscard.toSet() }
             player.deck.shuffle()
         }
         
-        // Draw only non-factory cards
-        val cardToDraw = player.deck.find { !it.type.isFactoryCard() } ?: return
-        player.deck.remove(cardToDraw)
+        if (player.deck.isEmpty()) return
+        
+        // Draw the first card (now guaranteed to be non-factory)
+        val cardToDraw = player.deck.removeAt(0)
         player.hand.add(cardToDraw)
     }
     
