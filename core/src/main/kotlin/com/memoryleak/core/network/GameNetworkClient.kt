@@ -37,6 +37,10 @@ class GameNetworkClient(private val app: MemoryLeakApp, private val host: String
         private set
     var matchmakingStatus: String = ""
     
+    // Saved decks from server
+    var savedDecks: List<SavedDeck> = emptyList()
+        private set
+    
     // Callbacks for UI updates
     var onAuthResponse: ((Boolean, String, PlayerStatsData?) -> Unit)? = null
     var onMatchFound: ((MatchFoundPacket) -> Unit)? = null
@@ -45,6 +49,7 @@ class GameNetworkClient(private val app: MemoryLeakApp, private val host: String
     var onOpponentDisconnected: ((Boolean) -> Unit)? = null
     var onError: ((String) -> Unit)? = null
     var onStateUpdate: (() -> Unit)? = null
+    var onDecksLoaded: ((List<SavedDeck>) -> Unit)? = null
     
     private var session: DefaultClientWebSocketSession? = null
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -161,6 +166,12 @@ class GameNetworkClient(private val app: MemoryLeakApp, private val host: String
                     println("Received ${packet.cards.size} card definitions")
                 }
                 
+                is DecksResponsePacket -> {
+                    savedDecks = packet.decks
+                    println("Received ${packet.decks.size} saved decks")
+                    onDecksLoaded?.invoke(packet.decks)
+                }
+                
                 is StatsResponsePacket -> {
                     app.playerStats = packet.stats
                 }
@@ -240,6 +251,22 @@ class GameNetworkClient(private val app: MemoryLeakApp, private val host: String
     fun requestAllCards() {
         scope.launch {
             val packet = GetAllCardsPacket()
+            val json = Json.encodeToString<Packet>(packet)
+            session?.send(Frame.Text(json))
+        }
+    }
+    
+    fun loadDecks() {
+        scope.launch {
+            val packet = LoadDecksPacket()
+            val json = Json.encodeToString<Packet>(packet)
+            session?.send(Frame.Text(json))
+        }
+    }
+    
+    fun saveDeck(deckName: String, cardTypes: List<String>) {
+        scope.launch {
+            val packet = SaveDeckPacket(deckName, cardTypes)
             val json = Json.encodeToString<Packet>(packet)
             session?.send(Frame.Text(json))
         }
